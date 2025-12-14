@@ -28,8 +28,7 @@ import {
   Share2
 } from 'lucide-react';
 
-// --- Firebase Init (本番環境用に修正) ---
-// AI環境変数を削除し、Viteの環境変数を使用するように変更
+// --- Firebase Init (本番環境用設定を維持) ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -274,11 +273,10 @@ export default function App() {
     }
   };
 
-  // --- Auth & Listener (本番環境用に簡略化) ---
+  // --- Auth & Listener ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // AI環境特有のTokenチェックを削除し、直接匿名ログイン
         await signInAnonymously(auth);
       } catch (e) {
         console.error("Auth failed", e);
@@ -503,7 +501,10 @@ export default function App() {
                 {game.winner === (isHost ? 'host' : 'guest') ? "VICTORY!" : "DEFEAT"}
               </h2>
               <button 
-                onClick={() => setGameId("")} 
+                onClick={() => {
+                   setGameId("");
+                   setGame(null); // Fix: Explicitly reset game state
+                }} 
                 className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 mt-6 active:scale-95"
               >
                 <RotateCcw size={18} /> Return to Lobby
