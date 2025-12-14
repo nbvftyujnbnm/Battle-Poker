@@ -44,7 +44,8 @@ import {
   Layers,
   Info,
   Trash2,
-  Reply
+  Reply,
+  Move // 追加: 移動用アイコン
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -95,9 +96,9 @@ const createTacticsDeck = () => {
     { id: 't-fog', type: 'tactics', subType: 'environment', name: 'Fog', description: '【霧】このフラッグは役が無効になり、合計値勝負になる。' },
     { id: 't-mud', type: 'tactics', subType: 'environment', name: 'Mud', description: '【泥濘】このフラッグは4枚のカードでフォーメーションを作る。' },
     { id: 't-scout', type: 'tactics', subType: 'guile', name: 'Scout', description: '【偵察】山札から合計3枚引き、手札から2枚を山札に戻す。' },
-    { id: 't-redeploy', type: 'tactics', subType: 'guile', name: 'Redeploy', description: '【配置転換】自分のカードを移動または破棄。（未実装）' },
+    { id: 't-redeploy', type: 'tactics', subType: 'guile', name: 'Redeploy', description: '【配置転換】自分のカードを移動または破棄。' },
     { id: 't-deserter', type: 'tactics', subType: 'guile', name: 'Deserter', description: '【脱走】相手のカードを1枚選び、ゲームから除外する。' },
-    { id: 't-traitor', type: 'tactics', subType: 'guile', name: 'Traitor', description: '【裏切り】相手のカードを奪う。（未実装）' },
+    { id: 't-traitor', type: 'tactics', subType: 'guile', name: 'Traitor', description: '【裏切り】相手のカードを奪い、自分のフラッグに配置する。' },
   ];
   for (let i = tactics.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -244,7 +245,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, canPlay, isSpectator, isMyTurn, interactionMode }) => {
+// Update: onFlagClick added for target selection
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, canPlay, isSpectator, isMyTurn, interactionMode }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
   let Icon = Shield;
@@ -260,7 +262,11 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
+  
+  // Helpers for interaction targeting
+  const isTargetMode = interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action';
+  // Targetable if not owned and has space
+  const isTargetable = isTargetMode && !data.owner && (isHost ? !hostFull : !guestFull);
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
@@ -273,7 +279,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       <div className="flex flex-col gap-1">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
-          const canInteract = interactionMode === 'select_deserter_target' && card && isOpponent(isHost, isHost ? 'guest' : 'host');
+          // Traitor Target: Opponent's card
+          const isOpponentCard = true; // Opponent slots
+          const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard;
+          // Deserter Target: Opponent's card
+          const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard;
+          
+          const canInteract = canTraitor || canDeserter;
+
           return (
             <div key={`opp-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
@@ -288,8 +301,23 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       </div>
 
       <div className="relative z-10">
-        <button disabled={!canPlay || data.owner || (isHost ? hostFull : guestFull)} onClick={() => onPlayToFlag(index)} className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation ${statusColor} ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''} ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}`}>
-          {data.owner ? <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : hasClaim ? <Gavel className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" /> : <span className="text-gray-400 text-xs font-bold">{index + 1}</span>}
+        <button 
+          disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !isTargetable}
+          onClick={() => {
+            if (isTargetable && onFlagClick) onFlagClick(index);
+            else onPlayToFlag(index);
+          }}
+          className={`
+            w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
+            ${statusColor}
+            ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
+            ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
+            ${isTargetable ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
+          `}
+        >
+          {data.owner ? <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
+           hasClaim ? <Gavel className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" /> : 
+           <span className="text-gray-400 text-xs font-bold">{index + 1}</span>}
         </button>
 
         {showActions && (
@@ -311,9 +339,17 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.hostCards[i] : data.guestCards[i];
+          // Redeploy Source: My Card
+          const canRedeploy = interactionMode === 'select_redeploy_source' && card && !data.owner;
+          
           return (
             <div key={`my-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
-               {card ? <Card card={card} /> : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />}
+               {card ? (
+                 <div className="relative">
+                   <Card card={card} onClick={() => canRedeploy && onCardClick && onCardClick(index, i, isHost ? 'host' : 'guest')} className={canRedeploy ? 'ring-2 ring-blue-500 cursor-pointer hover:scale-105 z-20' : ''}/>
+                   {canRedeploy && <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-lg pointer-events-none"><Move className="text-blue-600"/></div>}
+                 </div>
+               ) : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />}
             </div>
           );
         })}
@@ -340,6 +376,7 @@ export default function App() {
   const [interactionMode, setInteractionMode] = useState(null);
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
   const [scoutReturnCount, setScoutReturnCount] = useState(0);
+  const [selectedBoardCard, setSelectedBoardCard] = useState(null); // { flagIndex, cardIndex, side }
   
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
@@ -413,18 +450,14 @@ export default function App() {
     return () => unsubscribe();
   }, [gameId, user, isChatOpen]);
 
-  // --- Auto-Win Check (Self-Correction Logic) ---
   useEffect(() => {
-    if (!game || game.winner) return; // すでに終了していれば無視
-    
+    if (!game || game.winner) return;
     const actualWinner = checkWinner(game.flags);
     if (actualWinner && !game.winner) {
-      console.log("Detecting unsaved win. Fixing...");
       const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-      // 通信エラー等で書き込み漏れがあった場合、自動的に勝者をセットする
       updateDoc(gameRef, { winner: actualWinner }).catch(err => console.error("Auto-fix failed:", err));
     }
-  }, [game]); // ゲーム状態が変わるたびにチェック
+  }, [game]);
 
   useEffect(() => {
     if (isChatOpen && chatEndRef.current) {
@@ -526,6 +559,16 @@ export default function App() {
       return; 
     }
 
+    if (cardToPlay.name === 'Redeploy') {
+      setInteractionMode('select_redeploy_source');
+      return;
+    }
+
+    if (cardToPlay.name === 'Traitor') {
+      setInteractionMode('select_traitor_source');
+      return;
+    }
+
     if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'environment') {
        if (flag.environment) return;
        flag.environment = cardToPlay;
@@ -623,27 +666,161 @@ export default function App() {
   };
 
   const handleBoardCardClick = async (flagIndex, cardIndex, side) => {
-    if (interactionMode !== 'select_deserter_target') return;
     const isHost = user.uid === game.host;
-    const targetIsGuest = side === 'guest';
-    if (isHost === !targetIsGuest) return; 
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
-    const hand = [...game[myHandKey]];
-    const playedCard = hand[selectedCardIdx]; 
-    hand.splice(selectedCardIdx, 1);
-    const newFlags = [...game.flags];
-    const targetFlag = { ...newFlags[flagIndex] };
-    const targetCardsKey = side === 'host' ? 'hostCards' : 'guestCards';
-    const targetCards = [...targetFlag[targetCardsKey]];
-    const removedCard = targetCards.splice(cardIndex, 1)[0];
-    targetFlag[targetCardsKey] = targetCards;
-    newFlags[flagIndex] = targetFlag;
-    const logMsg = { sender: 'system', text: `${isHost ? 'Host' : 'Guest'} used Deserter to remove ${removedCard.name || removedCard.color + ' ' + removedCard.value}.`, timestamp: Date.now() };
-    const updateData = { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), chat: arrayUnion(logMsg), hasPlayedCard: true, winner: checkWinner(newFlags) || null };
+    
+    // Deserter: Target Opponent & Destroy
+    if (interactionMode === 'select_deserter_target') {
+      const targetIsGuest = side === 'guest';
+      if (isHost === !targetIsGuest) return; 
+      const hand = [...game[myHandKey]];
+      const playedCard = hand[selectedCardIdx]; 
+      hand.splice(selectedCardIdx, 1);
+      const newFlags = [...game.flags];
+      const targetFlag = { ...newFlags[flagIndex] };
+      const targetCardsKey = side === 'host' ? 'hostCards' : 'guestCards';
+      const targetCards = [...targetFlag[targetCardsKey]];
+      const removedCard = targetCards.splice(cardIndex, 1)[0];
+      targetFlag[targetCardsKey] = targetCards;
+      newFlags[flagIndex] = targetFlag;
+      const logMsg = { sender: 'system', text: `Deserter removed ${removedCard.name || removedCard.color + ' ' + removedCard.value}.`, timestamp: Date.now() };
+      const updateData = { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), chat: arrayUnion(logMsg), hasPlayedCard: true, winner: checkWinner(newFlags) || null };
+      const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+      await updateDoc(gameRef, updateData);
+      setInteractionMode(null);
+      setSelectedCardIdx(null);
+    }
+    // Redeploy: Select Own Source
+    else if (interactionMode === 'select_redeploy_source') {
+      const targetIsHost = side === 'host';
+      if (isHost !== targetIsHost) return;
+      setSelectedBoardCard({ flagIndex, cardIndex, side });
+      setInteractionMode('redeploy_action');
+    }
+    // Traitor: Select Opponent Source
+    else if (interactionMode === 'select_traitor_source') {
+      const targetIsGuest = side === 'guest';
+      if (isHost === !targetIsGuest) return;
+      setSelectedBoardCard({ flagIndex, cardIndex, side });
+      setInteractionMode('select_traitor_target');
+    }
+  };
+
+  const handleFlagInteractionClick = async (flagIndex) => {
+    const isHost = user.uid === game.host;
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
+    const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
+    const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, updateData);
+
+    // Redeploy Action: Move to new flag
+    if (interactionMode === 'redeploy_action' && selectedBoardCard) {
+      if (flagIndex === selectedBoardCard.flagIndex) return; // Must move to different flag
+      const newFlags = [...game.flags];
+      const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
+      const targetFlag = { ...newFlags[flagIndex] };
+      
+      const isMud = targetFlag.environment?.name === 'Mud';
+      const maxSlots = isMud ? 4 : 3;
+      if (targetFlag[myCardsKey].length >= maxSlots) return; // Full
+
+      const sourceCards = [...sourceFlag[myCardsKey]];
+      const cardToMove = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
+      sourceFlag[myCardsKey] = sourceCards;
+      
+      const targetCards = [...targetFlag[myCardsKey]];
+      targetCards.push(cardToMove);
+      targetFlag[myCardsKey] = targetCards;
+
+      newFlags[selectedBoardCard.flagIndex] = sourceFlag;
+      newFlags[flagIndex] = targetFlag;
+
+      const hand = [...game[myHandKey]];
+      const playedCard = hand[selectedCardIdx];
+      hand.splice(selectedCardIdx, 1);
+
+      await updateDoc(gameRef, {
+        flags: newFlags,
+        [myHandKey]: hand,
+        [myGuileKey]: arrayUnion(playedCard),
+        hasPlayedCard: true,
+        winner: checkWinner(newFlags) || null,
+        chat: arrayUnion({ sender: 'system', text: `Redeployed ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() })
+      });
+      setInteractionMode(null);
+      setSelectedBoardCard(null);
+      setSelectedCardIdx(null);
+    }
+    // Traitor Action: Move opponent card to my flag
+    else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
+      const newFlags = [...game.flags];
+      const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
+      const targetFlag = { ...newFlags[flagIndex] };
+      
+      const isMud = targetFlag.environment?.name === 'Mud';
+      const maxSlots = isMud ? 4 : 3;
+      if (targetFlag[myCardsKey].length >= maxSlots) return;
+
+      const oppCardsKey = selectedBoardCard.side === 'host' ? 'hostCards' : 'guestCards';
+      const sourceCards = [...sourceFlag[oppCardsKey]];
+      const cardToMove = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
+      sourceFlag[oppCardsKey] = sourceCards;
+
+      const targetCards = [...targetFlag[myCardsKey]];
+      targetCards.push(cardToMove);
+      targetFlag[myCardsKey] = targetCards;
+
+      newFlags[selectedBoardCard.flagIndex] = sourceFlag;
+      newFlags[flagIndex] = targetFlag;
+
+      const hand = [...game[myHandKey]];
+      const playedCard = hand[selectedCardIdx];
+      hand.splice(selectedCardIdx, 1);
+
+      await updateDoc(gameRef, {
+        flags: newFlags,
+        [myHandKey]: hand,
+        [myGuileKey]: arrayUnion(playedCard),
+        hasPlayedCard: true,
+        winner: checkWinner(newFlags) || null,
+        chat: arrayUnion({ sender: 'system', text: `Traitor stole ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() })
+      });
+      setInteractionMode(null);
+      setSelectedBoardCard(null);
+      setSelectedCardIdx(null);
+    }
+  };
+
+  const handleRedeployDiscard = async () => {
+    if (interactionMode !== 'redeploy_action' || !selectedBoardCard) return;
+    const isHost = user.uid === game.host;
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
+    const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
+    const myCardsKey = isHost ? 'hostCards' : 'guestCards';
+    
+    const newFlags = [...game.flags];
+    const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
+    const sourceCards = [...sourceFlag[myCardsKey]];
+    const removedCard = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
+    sourceFlag[myCardsKey] = sourceCards;
+    newFlags[selectedBoardCard.flagIndex] = sourceFlag;
+
+    const hand = [...game[myHandKey]];
+    const playedCard = hand[selectedCardIdx];
+    hand.splice(selectedCardIdx, 1);
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, {
+      flags: newFlags,
+      [myHandKey]: hand,
+      [myGuileKey]: arrayUnion(playedCard),
+      hasPlayedCard: true,
+      winner: checkWinner(newFlags) || null,
+      chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() })
+    });
     setInteractionMode(null);
+    setSelectedBoardCard(null);
     setSelectedCardIdx(null);
   };
 
@@ -784,9 +961,13 @@ export default function App() {
   const selectedDetails = selectedCardIdx !== null && myHand[selectedCardIdx] && myHand[selectedCardIdx].type === 'tactics' ? myHand[selectedCardIdx] : null;
   
   let interactionMsg = null;
-  if (interactionMode === 'scout_draw') interactionMsg = `Draw ${3 - scoutDrawCount} more cards (Normal or Tactics)`;
-  else if (interactionMode === 'scout_return') interactionMsg = `Return ${2 - scoutReturnCount} cards to top of deck`;
+  if (interactionMode === 'scout_draw') interactionMsg = `Draw ${3 - scoutDrawCount} more cards`;
+  else if (interactionMode === 'scout_return') interactionMsg = `Return ${2 - scoutReturnCount} cards to deck`;
   else if (interactionMode === 'select_deserter_target') interactionMsg = "Select an OPPONENT card to destroy";
+  else if (interactionMode === 'select_redeploy_source') interactionMsg = "Select YOUR card to move";
+  else if (interactionMode === 'redeploy_action') interactionMsg = "Tap a flag to move, or Discard";
+  else if (interactionMode === 'select_traitor_source') interactionMsg = "Select an OPPONENT card to steal";
+  else if (interactionMode === 'select_traitor_target') interactionMsg = "Select YOUR flag to place it";
 
   return (
     <div className="h-[100dvh] w-full bg-slate-100 flex flex-col overflow-hidden overscroll-y-none select-none touch-manipulation">
@@ -820,6 +1001,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* Chat Overlay */}
       {isChatOpen && (
         <div className="absolute inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/20" onClick={() => setIsChatOpen(false)}>
           <div className="w-full sm:w-96 h-[60vh] sm:h-[500px] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom" onClick={(e) => e.stopPropagation()}>
@@ -887,7 +1069,8 @@ export default function App() {
             {game.flags.map((flag, idx) => (
               <FlagSpot 
                 key={idx} index={idx} data={flag} isHost={viewAsHost} 
-                onPlayToFlag={playCard} onClaim={claimFlag} onConcede={concedeFlag} onDeny={denyFlag} onCancelClaim={cancelClaim} onEnvironmentClick={setViewingEnvironment} onCardClick={handleBoardCardClick}
+                onPlayToFlag={playCard} onClaim={claimFlag} onConcede={concedeFlag} onDeny={denyFlag} onCancelClaim={cancelClaim} onEnvironmentClick={setViewingEnvironment} 
+                onCardClick={handleBoardCardClick} onFlagClick={handleFlagInteractionClick}
                 canPlay={isMyTurn && selectedCardIdx !== null && !interactionMode}
                 isSpectator={isSpectator} isMyTurn={isMyTurn} interactionMode={interactionMode}
               />
@@ -897,12 +1080,25 @@ export default function App() {
 
         <div className="w-full bg-white border-t border-slate-200 p-2 pb-2 sm:p-4 z-10 flex-shrink-0">
           <div className="relative w-full max-w-4xl mx-auto">
+             {/* My Guile Zone */}
              <div className="absolute -top-24 right-2 w-24 flex flex-col items-end opacity-90 z-10 pointer-events-none">
                 <span className="text-[10px] text-slate-500 font-bold mb-1 bg-white/80 px-1 rounded shadow-sm">My Guile</span>
                 <div className="flex flex-wrap gap-1 justify-end content-start">
                   {myGuile.length > 0 ? myGuile.map((c, i) => (<div key={i} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm"><Scroll size={12} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
                 </div>
              </div>
+
+             {/* Redeploy Discard Button */}
+             {interactionMode === 'redeploy_action' && (
+                <div className="absolute -top-24 inset-x-0 flex justify-center z-30 pointer-events-auto">
+                   <button 
+                     onClick={handleRedeployDiscard}
+                     className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-full shadow-xl flex items-center gap-2 animate-bounce"
+                   >
+                     <Trash2 size={18} /> 破棄して終了
+                   </button>
+                </div>
+             )}
 
              {isMyTurn && !interactionMode && <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm animate-bounce z-20 whitespace-nowrap pointer-events-none">YOUR TURN</div>}
 
