@@ -210,7 +210,16 @@ const checkWinner = (flags) => {
 
 const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => {
   if (!card) return <div className={`w-12 h-16 sm:w-16 sm:h-24 border-2 border-dashed border-gray-300 rounded-lg flex-shrink-0 ${className}`}></div>;
-  if (hidden) return <div className={`w-12 h-16 sm:w-16 sm:h-24 bg-slate-700 rounded-lg border-2 border-slate-600 shadow-sm flex items-center justify-center flex-shrink-0 ${className}`}><div className="w-8 h-12 bg-slate-600 rounded-sm opacity-50"></div></div>;
+  if (hidden) {
+    const isTactics = card.type === 'tactics';
+    const bgClass = isTactics ? 'bg-orange-900 border-orange-700' : 'bg-slate-700 border-slate-600';
+    const innerClass = isTactics ? 'bg-orange-800' : 'bg-slate-600';
+    return (
+      <div className={`w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex items-center justify-center flex-shrink-0 ${bgClass} ${className}`}>
+        <div className={`w-8 h-12 rounded-sm opacity-50 ${innerClass}`}></div>
+      </div>
+    );
+  }
 
   if (card.type === 'tactics') {
     let typeColor = "bg-slate-200 border-slate-400 text-slate-700";
@@ -362,7 +371,7 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
-  const [viewingEnvironment, setViewingEnvironment] = useState(null);
+  const [viewingCard, setViewingCard] = useState(null);
   
   const [interactionMode, setInteractionMode] = useState(null);
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
@@ -531,7 +540,20 @@ export default function App() {
     
     let updateData = {};
 
+    // Helper to check availability for Tactics
+    const hasValidTarget = (targetIsMine) => {
+       const targetKey = targetIsMine 
+         ? (isHost ? 'hostCards' : 'guestCards')
+         : (isHost ? 'guestCards' : 'hostCards');
+       return game.flags.some(f => !f.owner && f[targetKey].length > 0);
+    };
+
     if (cardToPlay.name === 'Scout') {
+      const deckCount = (game.deck.length + (game.tacticsDeck ? game.tacticsDeck.length : 0));
+      if (deckCount === 0) {
+        setError("No cards in decks!");
+        return;
+      }
       hand.splice(selectedCardIdx, 1);
       updateData[myHandKey] = hand;
       updateData[myGuileKey] = arrayUnion(cardToPlay);
@@ -546,16 +568,19 @@ export default function App() {
     }
     
     if (cardToPlay.name === 'Deserter') {
+      if (!hasValidTarget(false)) { setError("No valid target cards on board!"); return; }
       setInteractionMode('select_deserter_target');
       return; 
     }
 
     if (cardToPlay.name === 'Redeploy') {
+      if (!hasValidTarget(true)) { setError("No valid cards to move!"); return; }
       setInteractionMode('select_redeploy_source');
       return;
     }
 
     if (cardToPlay.name === 'Traitor') {
+      if (!hasValidTarget(false)) { setError("No valid target cards on board!"); return; }
       setInteractionMode('select_traitor_source');
       return;
     }
@@ -750,15 +775,13 @@ export default function App() {
 
       const oppCardsKey = selectedBoardCard.side === 'host' ? 'hostCards' : 'guestCards';
       const sourceCards = [...sourceFlag[oppCardsKey]];
-      const cardToMove = sourceCards[selectedBoardCard.cardIndex]; // copy reference to check
+      const cardToMove = sourceCards[selectedBoardCard.cardIndex];
 
-      // 【修正点】Traitorでリーダーカードを奪う際の制限チェック
       if (cardToMove.name === 'Alexander' || cardToMove.name === 'Darius') {
          const alreadyUsedLeader = game.flags.some(f => 
            f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius')
          );
          if (alreadyUsedLeader) {
-           // 本来はアラートを出すべきだが、ここでは操作をキャンセルするのみ
            return; 
          }
       }
@@ -970,7 +993,19 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full bg-slate-100 flex flex-col overflow-hidden overscroll-y-none select-none touch-manipulation">
-      {interactionMsg && <div className="bg-purple-600 text-white p-2 text-center font-bold text-sm z-30 animate-pulse">{interactionMsg}</div>}
+      {interactionMsg && (
+        <div className="bg-purple-600 text-white p-2 text-center font-bold text-sm z-30 animate-pulse flex justify-between items-center px-4">
+          <span>{interactionMsg}</span>
+          {(interactionMode === 'select_deserter_target' || interactionMode === 'select_redeploy_source' || interactionMode === 'select_traitor_source') && (
+            <button 
+              onClick={() => { setInteractionMode(null); setSelectedCardIdx(null); setSelectedBoardCard(null); }}
+              className="bg-white/20 px-3 py-1 rounded text-xs hover:bg-white/30"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
 
       <header className="bg-white shadow-sm px-3 py-2 flex justify-between items-center z-20 flex-shrink-0 pt-[env(safe-area-inset-top)]">
         <div className="flex items-center gap-2">
@@ -1028,13 +1063,15 @@ export default function App() {
         </div>
       )}
 
-      {viewingEnvironment && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setViewingEnvironment(null)}>
+      {viewingCard && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setViewingCard(null)}>
            <div className="bg-white p-6 rounded-xl shadow-2xl max-w-xs w-full text-center" onClick={(e) => e.stopPropagation()}>
-              <Cloud className="w-12 h-12 mx-auto text-emerald-500 mb-2" />
-              <h3 className="text-xl font-bold text-slate-800 mb-2">{viewingEnvironment.name}</h3>
-              <p className="text-slate-600 mb-6">{viewingEnvironment.description}</p>
-              <button onClick={() => setViewingEnvironment(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-900 w-full">Close</button>
+              <div className="flex justify-center mb-2 text-slate-700">
+                {viewingCard.subType === 'environment' ? <Cloud size={48} className="text-emerald-500"/> : viewingCard.subType === 'guile' ? <Scroll size={48} className="text-purple-500"/> : <Zap size={48} className="text-orange-500"/>}
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">{viewingCard.name}</h3>
+              <p className="text-slate-600 mb-6">{viewingCard.description}</p>
+              <button onClick={() => setViewingCard(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-900 w-full">Close</button>
            </div>
         </div>
       )}
@@ -1053,12 +1090,12 @@ export default function App() {
 
         <div className="w-full flex justify-between items-end py-2 bg-slate-100/50 flex-shrink-0 min-h-[60px] sm:min-h-[80px] px-2">
            <div className="flex gap-1 overflow-x-auto px-4 no-scrollbar items-end h-full flex-1 justify-center">
-             {opponentHand && opponentHand.map((_, i) => (<Card key={`enemy-${i}`} hidden className="scale-75 origin-bottom" />))}
+             {opponentHand && opponentHand.map((c, i) => (<Card key={`enemy-${i}`} card={c} hidden className="scale-75 origin-bottom" />))}
            </div>
            <div className="w-24 h-full border-l border-slate-300 pl-2 flex flex-col justify-end items-center opacity-70">
               <span className="text-[10px] text-slate-500 font-bold mb-1">Played Guile</span>
               <div className="flex flex-wrap gap-1 justify-center">
-                {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (<div key={i} className="w-5 h-7 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm"><Scroll size={10} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400">-</div>}
+                {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-5 h-7 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform"><Scroll size={10} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400">-</div>}
               </div>
            </div>
         </div>
@@ -1068,7 +1105,8 @@ export default function App() {
             {game.flags.map((flag, idx) => (
               <FlagSpot 
                 key={idx} index={idx} data={flag} isHost={viewAsHost} 
-                onPlayToFlag={playCard} onClaim={claimFlag} onConcede={concedeFlag} onDeny={denyFlag} onCancelClaim={cancelClaim} onEnvironmentClick={setViewingEnvironment} 
+                onPlayToFlag={playCard} onClaim={claimFlag} onConcede={concedeFlag} onDeny={denyFlag} onCancelClaim={cancelClaim} 
+                onEnvironmentClick={setViewingCard}
                 onCardClick={handleBoardCardClick} onFlagClick={handleFlagInteractionClick}
                 canPlay={isMyTurn && selectedCardIdx !== null && !interactionMode}
                 isSpectator={isSpectator} isMyTurn={isMyTurn} interactionMode={interactionMode}
@@ -1082,8 +1120,8 @@ export default function App() {
              {/* My Guile Zone */}
              <div className="absolute -top-24 right-2 w-24 flex flex-col items-end opacity-90 z-10 pointer-events-none">
                 <span className="text-[10px] text-slate-500 font-bold mb-1 bg-white/80 px-1 rounded shadow-sm">My Guile</span>
-                <div className="flex flex-wrap gap-1 justify-end content-start">
-                  {myGuile.length > 0 ? myGuile.map((c, i) => (<div key={i} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm"><Scroll size={12} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
+                <div className="flex flex-wrap gap-1 justify-end content-start pointer-events-auto">
+                  {myGuile.length > 0 ? myGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform"><Scroll size={12} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
                 </div>
              </div>
 
