@@ -13,6 +13,7 @@ import {
   setDoc, 
   onSnapshot, 
   updateDoc, 
+  arrayUnion,
   serverTimestamp
 } from 'firebase/firestore';
 import { 
@@ -23,14 +24,17 @@ import {
   Copy, 
   Play, 
   RotateCcw,
-  Trophy,
+  Trophy, 
   AlertCircle,
   Download,
   Share2,
   Eye,
   Gavel,
   CheckCircle2,
-  XCircle
+  XCircle,
+  MessageCircle,
+  Send,
+  X
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -158,11 +162,9 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
   );
 };
 
-// FlagSpot: isMyTurn を受け取り、証明ボタンの表示を制御
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   
-  // Resolve visuals
   let statusColor = "bg-gray-200 border-gray-300";
   let Icon = Shield;
   
@@ -174,17 +176,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
     Icon = !isHost ? Trophy : AlertCircle;
   }
 
-  // --- Proof System Logic ---
   const myRole = isHost ? 'host' : 'guest';
   const hasClaim = data.proofClaim && data.proofClaim.claimant;
   const isMyClaim = hasClaim === myRole;
   
-  // 観戦者にはボタンを表示しない
   const showActions = !isSpectator && !data.owner;
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
-      {/* Opponent Slots (Top) */}
       <div className="flex flex-col gap-1">
         {[0, 1, 2].map(i => (
           <div key={`opp-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
@@ -197,7 +196,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
         ))}
       </div>
 
-      {/* The Flag Marker */}
       <div className="relative z-10">
         <button 
           disabled={!canPlay || data.owner || (isHost ? data.hostCards.length >= 3 : data.guestCards.length >= 3)}
@@ -218,12 +216,9 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
           )}
         </button>
 
-        {/* Proof Action Buttons */}
         {showActions && (
           <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1 z-20">
             {!hasClaim ? (
-              // 誰も請求していない場合 -> 「証明」ボタン
-              // 【修正】自分のターンの場合のみ表示
               isMyTurn && (
                 <button 
                   onClick={(e) => { e.stopPropagation(); onClaim(index); }}
@@ -234,7 +229,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
                 </button>
               )
             ) : isMyClaim ? (
-              // 自分が請求中 -> 「取り消し」ボタン
               <button 
                 onClick={(e) => { e.stopPropagation(); onCancelClaim(index); }}
                 className="bg-white border border-red-200 rounded-full p-1 shadow-sm hover:bg-red-50 text-red-500"
@@ -243,7 +237,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
                 <XCircle size={12} />
               </button>
             ) : (
-              // 相手が請求中 -> 「認める」ボタン
               <button 
                 onClick={(e) => { e.stopPropagation(); onConcede(index); }}
                 className="bg-green-500 border border-green-600 rounded-full p-1 shadow-sm hover:bg-green-600 text-white animate-pulse"
@@ -256,7 +249,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
         )}
       </div>
 
-      {/* Player Slots (Bottom) */}
       <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
         {[0, 1, 2].map(i => (
           <div key={`my-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
@@ -281,6 +273,13 @@ export default function App() {
   const [error, setError] = useState(null);
   const [installPrompt, setInstallPrompt] = useState(null);
   const flagsContainerRef = useRef(null);
+
+  // Chat State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const chatEndRef = useRef(null);
+  const lastReadCountRef = useRef(0);
 
   // --- PWA & Mobile Setup ---
   useEffect(() => {
@@ -343,14 +342,33 @@ export default function App() {
     if (!gameId || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) setGame(snap.data());
-      else setError("Game not found.");
+      if (snap.exists()) {
+        const data = snap.data();
+        setGame(data);
+        
+        // Chat Unread Logic
+        const msgs = data.chat || [];
+        if (isChatOpen) {
+          lastReadCountRef.current = msgs.length;
+          setUnreadCount(0);
+        } else {
+          setUnreadCount(msgs.length - lastReadCountRef.current);
+        }
+      } else {
+        setError("Game not found.");
+      }
     }, (err) => {
         console.error("Snapshot Error:", err);
         setError("Connection lost.");
     });
     return () => unsubscribe();
-  }, [gameId, user]);
+  }, [gameId, user, isChatOpen]);
+
+  useEffect(() => {
+    if (isChatOpen && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [game?.chat, isChatOpen]);
 
   // --- Actions ---
 
@@ -376,6 +394,7 @@ export default function App() {
       hostHand,
       guestHand,
       flags: initialFlags,
+      chat: [], 
       createdAt: serverTimestamp(),
       lastMove: serverTimestamp()
     };
@@ -403,7 +422,6 @@ export default function App() {
         setLoading(false);
         return;
       }
-
       const gameData = gameSnap.data();
       if (!gameData.guest) {
         await updateDoc(gameRef, { guest: user.uid });
@@ -436,7 +454,6 @@ export default function App() {
     hand.splice(selectedCardIdx, 1);
     flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
-    // Check simple full resolution
     if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
       const hostScore = evaluateFormation(flag.hostCards);
       const guestScore = evaluateFormation(flag.guestCards);
@@ -450,7 +467,7 @@ export default function App() {
         else winner = isHost ? 'guest' : 'host';
       }
       flag.owner = winner;
-      flag.proofClaim = null; // Clear claim if resolved naturally
+      flag.proofClaim = null;
     }
 
     newFlags[flagIndex] = flag;
@@ -469,60 +486,68 @@ export default function App() {
     setSelectedCardIdx(null);
   };
 
-  // --- Proof System Actions ---
+  // --- Proof & Chat Actions ---
 
   const claimFlag = async (flagIndex) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     const myRole = isHost ? 'host' : 'guest';
-    
-    // 【修正】ターンチェックを追加
     if (game.turn !== myRole) return;
-
-    // 請求情報をセット
     const newFlags = [...game.flags];
     newFlags[flagIndex] = {
       ...newFlags[flagIndex],
       proofClaim: { claimant: myRole, timestamp: Date.now() }
     };
-
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { flags: newFlags });
   };
 
   const cancelClaim = async (flagIndex) => {
     if (!game || !user) return;
-    // 請求情報をクリア
     const newFlags = [...game.flags];
-    newFlags[flagIndex] = {
-      ...newFlags[flagIndex],
-      proofClaim: null
-    };
+    newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { flags: newFlags });
   };
 
   const concedeFlag = async (flagIndex) => {
     if (!game || !user) return;
-    
     const flag = game.flags[flagIndex];
     if (!flag.proofClaim) return;
-    
-    const winnerRole = flag.proofClaim.claimant; // 'host' or 'guest'
-    
-    // 承認処理
+    const winnerRole = flag.proofClaim.claimant;
     const newFlags = [...game.flags];
     newFlags[flagIndex] = {
       ...newFlags[flagIndex],
       owner: winnerRole,
       proofClaim: null
     };
-
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { 
       flags: newFlags,
       winner: checkWinner(newFlags) || null
     });
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!chatMessage.trim() || !user || !game) return;
+
+    const isHost = user.uid === game.host;
+    const isGuest = user.uid === game.guest;
+    if (!isHost && !isGuest) return; 
+
+    const role = isHost ? 'host' : 'guest';
+    const msg = {
+      sender: role,
+      text: chatMessage.trim(),
+      timestamp: Date.now()
+    };
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, {
+      chat: arrayUnion(msg)
+    });
+    setChatMessage("");
   };
 
   // --- Renders ---
@@ -539,7 +564,6 @@ export default function App() {
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Battle Line</h1>
             <p className="text-slate-500 mt-2 text-sm sm:text-base">Strategic Formation Card Game</p>
           </div>
-
           <div className="space-y-4">
             <button 
               onClick={createGame} 
@@ -548,7 +572,6 @@ export default function App() {
             >
               {loading ? 'Creating...' : <><Play size={20} /> New Game</>}
             </button>
-            
             <form onSubmit={(e) => { e.preventDefault(); joinGame(e.target.code.value); }} className="flex gap-2">
               <input 
                 name="code"
@@ -563,7 +586,6 @@ export default function App() {
                 Join
               </button>
             </form>
-            
             {installPrompt && (
                <button 
                  onClick={triggerInstall}
@@ -572,7 +594,6 @@ export default function App() {
                  <Download size={18} /> Install App
                </button>
             )}
-            
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
           </div>
         </div>
@@ -580,7 +601,6 @@ export default function App() {
     );
   }
 
-  // Active Game
   const isHost = user.uid === game.host;
   const isGuest = user.uid === game.guest;
   const isSpectator = !isHost && !isGuest;
@@ -603,13 +623,26 @@ export default function App() {
              <Eye size={16} /> 観戦中
            </div>
         ) : (
-          <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
-             <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>
-                <Users size={14} /> <span className="hidden xs:inline">Host</span>
-             </div>
-             <div className="text-slate-300">|</div>
-             <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-                <Users size={14} /> <span className="hidden xs:inline">Guest</span>
+          <div className="flex items-center gap-2">
+             {/* Chat Toggle Button */}
+             <button 
+                onClick={() => setIsChatOpen(!isChatOpen)}
+                className="relative p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 mr-2"
+             >
+                <MessageCircle size={20} />
+                {unreadCount > 0 && (
+                   <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border border-white"></span>
+                )}
+             </button>
+
+             <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
+               <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>
+                  <Users size={14} /> <span className="hidden xs:inline">Host</span>
+               </div>
+               <div className="text-slate-300">|</div>
+               <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+                  <Users size={14} /> <span className="hidden xs:inline">Guest</span>
+               </div>
              </div>
           </div>
         )}
@@ -623,6 +656,63 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Chat Overlay with fixed click propagation */}
+      {isChatOpen && (
+        <div 
+          className="absolute inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/20"
+          onClick={() => setIsChatOpen(false)}
+        >
+          <div 
+            className="w-full sm:w-96 h-[60vh] sm:h-[500px] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3 bg-slate-800 text-white flex justify-between items-center shrink-0">
+               <span className="font-bold flex items-center gap-2"><MessageCircle size={16}/> Game Chat</span>
+               <button onClick={() => setIsChatOpen(false)}><X size={20}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+               {game.chat && game.chat.length > 0 ? (
+                 game.chat.map((msg, i) => {
+                   const isMe = (isHost && msg.sender === 'host') || (isGuest && msg.sender === 'guest');
+                   return (
+                     <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                       <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
+                         isMe ? 'bg-blue-600 text-white rounded-br-none' : 
+                         msg.sender === 'host' ? 'bg-blue-100 text-blue-900 rounded-bl-none' : 
+                         'bg-red-100 text-red-900 rounded-bl-none'
+                       }`}>
+                         {msg.text}
+                       </div>
+                       <span className="text-[10px] text-slate-400 mt-1">
+                         {msg.sender === 'host' ? 'Host' : 'Guest'}
+                       </span>
+                     </div>
+                   );
+                 })
+               ) : (
+                 <div className="text-center text-slate-400 text-sm mt-10">
+                   No messages yet.<br/>Use chat to explain proofs.
+                 </div>
+               )}
+               <div ref={chatEndRef}></div>
+            </div>
+            {!isSpectator && (
+              <form onSubmit={sendMessage} className="p-3 border-t bg-white flex gap-2 shrink-0">
+                <input 
+                   className="flex-1 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                   placeholder="Type a message..."
+                   value={chatMessage}
+                   onChange={(e) => setChatMessage(e.target.value)}
+                />
+                <button type="submit" className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-900">
+                  <Send size={18} />
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 relative flex flex-col items-center justify-between overflow-hidden pb-[env(safe-area-inset-bottom)]">
         
@@ -685,7 +775,7 @@ export default function App() {
                 onCancelClaim={cancelClaim}
                 canPlay={isMyTurn && selectedCardIdx !== null}
                 isSpectator={isSpectator}
-                isMyTurn={isMyTurn} // 修正: FlagSpotにターン情報を渡す
+                isMyTurn={isMyTurn}
               />
             ))}
           </div>
