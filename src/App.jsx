@@ -37,10 +37,11 @@ import {
   X,
   Ban,
   ArrowRight,
-  Cloud,      // 気象戦術用
-  Zap,        // 士気高揚用
-  Scroll,     // 謀略用
-  Layers      // 山札用
+  Cloud,
+  Zap,
+  Scroll,
+  Layers,
+  Info
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -80,18 +81,15 @@ const createDeck = () => {
   return deck;
 };
 
-// 戦術カードデッキの生成（ダミーデータ）
 const createTacticsDeck = () => {
   const tactics = [
     { id: 't-morale-1', type: 'tactics', subType: 'morale', name: 'Alexander', description: '任意の数字・色として扱えるワイルドカード' },
     { id: 't-env-1', type: 'tactics', subType: 'environment', name: 'Fog', description: 'このフラッグは役が無効になり、合計値勝負になる' },
     { id: 't-guile-1', type: 'tactics', subType: 'guile', name: 'Traitor', description: '相手のカードを1枚奪って自分の場に出す' },
-    // テスト用に枚数を増やす
     { id: 't-morale-2', type: 'tactics', subType: 'morale', name: 'Darius', description: '任意の数字・色として扱える' },
     { id: 't-env-2', type: 'tactics', subType: 'environment', name: 'Mud', description: 'このフラッグは4枚目のカードを出せるようになる' },
     { id: 't-guile-2', type: 'tactics', subType: 'guile', name: 'Scout', description: '山札を3枚見て並べ替える' },
   ];
-  // シャッフル
   for (let i = tactics.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [tactics[i], tactics[j]] = [tactics[j], tactics[i]];
@@ -101,13 +99,8 @@ const createTacticsDeck = () => {
 
 const evaluateFormation = (cards) => {
   if (cards.length !== 3) return { tier: 0, sum: 0 };
-  
-  // Note: 戦術カードの実装時にここを拡張する必要がありますが、
-  // 今回は「数字カード」のみを前提としたロジックを維持します。
-  // 混合した場合のエラーを防ぐため、念のため type check を入れるのが安全ですが
-  // 今回はインフラ構築のみのため既存ロジックを維持します。
   const numberCards = cards.filter(c => c.type === 'number' || !c.type);
-  if (numberCards.length !== 3) return { tier: 0, sum: 0 }; // 暫定対応
+  if (numberCards.length !== 3) return { tier: 0, sum: 0 };
 
   const sorted = [...numberCards].sort((a, b) => a.value - b.value);
   const values = sorted.map(c => c.value);
@@ -118,11 +111,11 @@ const evaluateFormation = (cards) => {
   const isStraight = (values[1] === values[0] + 1) && (values[2] === values[1] + 1);
   const isThreeOfAKind = values[0] === values[1] && values[1] === values[2];
 
-  if (isFlush && isStraight) return { tier: 5, sum }; // Wedge
-  if (isThreeOfAKind) return { tier: 4, sum };        // Phalanx
-  if (isFlush) return { tier: 3, sum };               // Battalion
-  if (isStraight) return { tier: 2, sum };            // Skirmish
-  return { tier: 1, sum };                            // Host
+  if (isFlush && isStraight) return { tier: 5, sum };
+  if (isThreeOfAKind) return { tier: 4, sum };
+  if (isFlush) return { tier: 3, sum };
+  if (isStraight) return { tier: 2, sum };
+  return { tier: 1, sum };
 };
 
 const checkWinner = (flags) => {
@@ -168,7 +161,6 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
     );
   }
 
-  // 戦術カードのスタイル
   if (card.type === 'tactics') {
     let typeColor = "bg-slate-200 border-slate-400 text-slate-700";
     let TypeIcon = Zap;
@@ -192,7 +184,6 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
     );
   }
 
-  // 通常カード
   const colorMap = {
     red: 'bg-red-100 text-red-600 border-red-300',
     orange: 'bg-orange-100 text-orange-600 border-orange-300',
@@ -219,7 +210,7 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
   );
 };
 
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, canPlay, isSpectator, isMyTurn }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   
   let statusColor = "bg-gray-200 border-gray-300";
@@ -242,11 +233,15 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
       
-      {/* Flag Environment Status (気象戦術用UI) */}
       {data.environment ? (
-         <div className="absolute -top-6 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10">
-           <Cloud size={10} /> {data.environment.name}
-         </div>
+         <button 
+           onClick={(e) => { e.stopPropagation(); onEnvironmentClick(data.environment); }}
+           className="absolute -top-7 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10 hover:bg-emerald-200 active:scale-95"
+         >
+           <Cloud size={10} /> 
+           <span className="max-w-[60px] truncate">{data.environment.name}</span>
+           <Info size={10} className="opacity-50"/>
+         </button>
       ) : null}
 
       <div className="flex flex-col gap-1">
@@ -351,8 +346,23 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [viewingEnvironment, setViewingEnvironment] = useState(null);
+  
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
+
+  // --- CRITICAL FIX: Unregister Service Worker ---
+  // PWAのService WorkerがFirestoreの通信を阻害するのを防ぐため、強制解除する
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (let registration of registrations) {
+          console.log('Unregistering SW:', registration);
+          registration.unregister();
+        }
+      });
+    }
+  }, []);
 
   // --- PWA & Mobile Setup ---
   useEffect(() => {
@@ -430,7 +440,7 @@ export default function App() {
       }
     }, (err) => {
         console.error("Snapshot Error:", err);
-        setError("Connection lost.");
+        setError("Connection lost. Please reload.");
     });
     return () => unsubscribe();
   }, [gameId, user, isChatOpen]);
@@ -447,7 +457,7 @@ export default function App() {
     if (!user) return;
     setLoading(true);
     const newDeck = createDeck();
-    const tacticsDeck = createTacticsDeck(); // 新規: 戦術カード
+    const tacticsDeck = createTacticsDeck();
     const hostHand = newDeck.splice(0, HAND_SIZE);
     const guestHand = newDeck.splice(0, HAND_SIZE);
 
@@ -464,11 +474,11 @@ export default function App() {
       hasPlayedCard: false,
       winner: null,
       deck: newDeck,
-      tacticsDeck: tacticsDeck, // 追加
+      tacticsDeck: tacticsDeck,
       hostHand,
       guestHand,
-      hostGuile: [], // 追加: 謀略カード履歴
-      guestGuile: [], // 追加: 謀略カード履歴
+      hostGuile: [],
+      guestGuile: [],
       flags: initialFlags,
       chat: [], 
       createdAt: serverTimestamp(),
@@ -523,55 +533,72 @@ export default function App() {
     const flag = { ...newFlags[flagIndex] };
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
+    const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
+    
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
+    
+    let updateData = {};
 
-    if (flag.owner || flag[myCardsKey].length >= 3) return;
+    if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'environment') {
+       if (flag.environment) return;
+       flag.environment = cardToPlay;
+       hand.splice(selectedCardIdx, 1);
+       newFlags[flagIndex] = flag;
+       updateData.flags = newFlags;
+       updateData[myHandKey] = hand;
+    }
+    else if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'guile') {
+       hand.splice(selectedCardIdx, 1);
+       updateData[myHandKey] = hand;
+       updateData[myGuileKey] = arrayUnion(cardToPlay);
+    }
+    else {
+       if (flag.owner || flag[myCardsKey].length >= 3) return;
+       hand.splice(selectedCardIdx, 1);
+       flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
-    hand.splice(selectedCardIdx, 1);
-    flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
+       if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
+         const hostScore = evaluateFormation(flag.hostCards);
+         const guestScore = evaluateFormation(flag.guestCards);
+         
+         let winner = null;
+         if (hostScore.tier > guestScore.tier) winner = 'host';
+         else if (guestScore.tier > hostScore.tier) winner = 'guest';
+         else {
+           if (hostScore.sum > guestScore.sum) winner = 'host';
+           else if (guestScore.sum > hostScore.sum) winner = 'guest';
+           else winner = isHost ? 'guest' : 'host';
+         }
+         flag.owner = winner;
+         flag.proofClaim = null;
+       }
 
-    // 戦術カード（気象など）の効果はここで適用ロジックが必要だが、今回はインフラのみ。
-    // フラッグにカードを追加する処理は既存通り。
-
-    if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
-      const hostScore = evaluateFormation(flag.hostCards);
-      const guestScore = evaluateFormation(flag.guestCards);
-      
-      let winner = null;
-      if (hostScore.tier > guestScore.tier) winner = 'host';
-      else if (guestScore.tier > hostScore.tier) winner = 'guest';
-      else {
-        if (hostScore.sum > guestScore.sum) winner = 'host';
-        else if (guestScore.sum > hostScore.sum) winner = 'guest';
-        else winner = isHost ? 'guest' : 'host';
-      }
-      flag.owner = winner;
-      flag.proofClaim = null;
+       newFlags[flagIndex] = flag;
+       updateData.flags = newFlags;
+       updateData[myHandKey] = hand;
     }
 
-    newFlags[flagIndex] = flag;
-    
-    // 変更: ここでドローをしない。hasPlayedCardを立てるだけ。
+    updateData.hasPlayedCard = true;
+    updateData.winner = checkWinner(newFlags) || null;
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, {
-      flags: newFlags,
-      [myHandKey]: hand,
-      // deck: deck, // ドローしない
-      hasPlayedCard: true, 
-      winner: checkWinner(newFlags) || null
-    });
+    try {
+      await updateDoc(gameRef, updateData);
+    } catch (e) {
+      console.error("Network Error:", e);
+      setError("通信エラーが発生しました。再読み込みしてください。");
+    }
+    
     setSelectedCardIdx(null);
   };
 
-  // 新規: ドローしてターン終了
   const drawAndEndTurn = async (deckType) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myRole = isHost ? 'host' : 'guest';
     
-    // ドロー処理
     let newDeck = [];
     let drawnCard = null;
     let updateData = {};
@@ -590,14 +617,13 @@ export default function App() {
       }
     }
 
-    // 手札へ追加
     const hand = [...game[myHandKey]];
     if (drawnCard) {
       hand.push(drawnCard);
     }
     updateData[myHandKey] = hand;
 
-    // 自動否認 & ターン交代
+    // 自動否認
     const newFlags = game.flags.map(flag => {
       if (flag.proofClaim && flag.proofClaim.claimant === myRole) {
         return { ...flag, proofClaim: null };
@@ -608,13 +634,18 @@ export default function App() {
     updateData.flags = newFlags;
     updateData.turn = isHost ? 'guest' : 'host';
     updateData.hasPlayedCard = false;
+    // 確実に勝利判定を行う
+    updateData.winner = checkWinner(newFlags) || null; 
     updateData.lastMove = serverTimestamp();
 
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, updateData);
+    try {
+      await updateDoc(gameRef, updateData);
+    } catch (e) {
+      console.error("Network Error:", e);
+      setError("通信エラーが発生しました。再読み込みしてください。");
+    }
   };
-
-  // --- Proof & Chat Actions ---
 
   const claimFlag = async (flagIndex) => {
     if (!game || !user) return;
@@ -658,6 +689,7 @@ export default function App() {
       proofClaim: null
     };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    // 承認時も確実に勝利判定を行う
     await updateDoc(gameRef, { 
       flags: newFlags,
       winner: checkWinner(newFlags) || null
@@ -735,9 +767,10 @@ export default function App() {
   const myHand = viewAsHost ? game.hostHand : game.guestHand;
   const opponentHand = viewAsHost ? game.guestHand : game.hostHand;
   const opponentGuile = viewAsHost ? (game.guestGuile || []) : (game.hostGuile || []);
+  const myGuile = viewAsHost ? (game.hostGuile || []) : (game.guestGuile || []);
+
   const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
 
-  // 選択中のカード情報（戦術カード確認用）
   const selectedDetails = selectedCardIdx !== null && myHand[selectedCardIdx] && myHand[selectedCardIdx].type === 'tactics' 
     ? myHand[selectedCardIdx] 
     : null;
@@ -833,23 +866,64 @@ export default function App() {
         </div>
       )}
 
+      {viewingEnvironment && (
+        <div 
+           className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in"
+           onClick={() => setViewingEnvironment(null)}
+        >
+           <div className="bg-white p-6 rounded-xl shadow-2xl max-w-xs w-full text-center" onClick={(e) => e.stopPropagation()}>
+              <Cloud className="w-12 h-12 mx-auto text-emerald-500 mb-2" />
+              <h3 className="text-xl font-bold text-slate-800 mb-2">{viewingEnvironment.name}</h3>
+              <p className="text-slate-600 mb-6">{viewingEnvironment.description}</p>
+              <button 
+                onClick={() => setViewingEnvironment(null)}
+                className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-900 w-full"
+              >
+                Close
+              </button>
+           </div>
+        </div>
+      )}
+
       <main className="flex-1 relative flex flex-col items-center justify-between overflow-hidden pb-[env(safe-area-inset-bottom)]">
         
-        {/* Opponent Area (Top) */}
+        {/* Game Over Overlay */}
+        {game.winner && (
+          <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl text-center w-full max-w-sm">
+              <Crown className="w-16 h-16 sm:w-20 sm:h-20 mx-auto text-yellow-500 mb-4 animate-bounce" />
+              <h2 className="text-3xl font-black text-slate-800 mb-2">
+                {game.winner === (isHost ? 'host' : 'guest') ? "VICTORY!" : "DEFEAT"}
+              </h2>
+              {isSpectator && <p className="text-slate-500 mb-4">{game.winner.toUpperCase()} WON!</p>}
+              <button 
+                onClick={() => {
+                   setGameId("");
+                   setGame(null);
+                }} 
+                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 mt-6 active:scale-95"
+              >
+                <RotateCcw size={18} /> Return to Lobby
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Opponent Area */}
         <div className="w-full flex justify-between items-end py-2 bg-slate-100/50 flex-shrink-0 min-h-[60px] sm:min-h-[80px] px-2">
-           {/* 相手の手札 */}
            <div className="flex gap-1 overflow-x-auto px-4 no-scrollbar items-end h-full flex-1 justify-center">
              {opponentHand && opponentHand.map((_, i) => (
                <Card key={`enemy-${i}`} hidden className="scale-75 origin-bottom" />
              ))}
            </div>
            
-           {/* 相手の謀略カード履歴 (Guile Zone) */}
            <div className="w-24 h-full border-l border-slate-300 pl-2 flex flex-col justify-end items-center opacity-70">
               <span className="text-[10px] text-slate-500 font-bold mb-1">Played Guile</span>
               <div className="flex flex-wrap gap-1 justify-center">
                 {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (
-                  <div key={i} className="w-4 h-6 bg-purple-200 border border-purple-400 rounded-sm"></div>
+                  <div key={i} className="w-5 h-7 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm">
+                      <Scroll size={10} className="text-purple-700" />
+                  </div>
                 )) : <div className="text-[10px] text-slate-400">-</div>}
               </div>
            </div>
@@ -872,6 +946,7 @@ export default function App() {
                 onConcede={concedeFlag}
                 onDeny={denyFlag}
                 onCancelClaim={cancelClaim}
+                onEnvironmentClick={setViewingEnvironment} 
                 canPlay={isMyTurn && selectedCardIdx !== null}
                 isSpectator={isSpectator}
                 isMyTurn={isMyTurn}
@@ -883,15 +958,26 @@ export default function App() {
         {/* Player Area */}
         <div className="w-full bg-white border-t border-slate-200 p-2 pb-2 sm:p-4 z-10 flex-shrink-0">
           <div className="relative w-full max-w-4xl mx-auto">
+             {/* My Guile Zone */}
+             <div className="absolute -top-24 right-2 w-24 flex flex-col items-end opacity-90 z-10 pointer-events-none">
+                <span className="text-[10px] text-slate-500 font-bold mb-1 bg-white/80 px-1 rounded shadow-sm">My Guile</span>
+                <div className="flex flex-wrap gap-1 justify-end content-start">
+                  {myGuile.length > 0 ? myGuile.map((c, i) => (
+                    <div key={i} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm">
+                        <Scroll size={12} className="text-purple-700" />
+                    </div>
+                  )) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
+                </div>
+             </div>
+
              {isMyTurn && (
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm animate-bounce z-20 whitespace-nowrap pointer-events-none">
                    YOUR TURN
                 </div>
              )}
 
-             {/* Selected Tactics Info Overlay */}
              {selectedDetails && (
-               <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white p-3 rounded-lg shadow-lg w-64 z-30 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
+               <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white p-3 rounded-lg shadow-lg w-64 z-30 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
                  <h4 className="font-bold text-yellow-400 flex items-center justify-center gap-2">
                    {selectedDetails.name}
                  </h4>
@@ -899,7 +985,6 @@ export default function App() {
                </div>
              )}
              
-             {/* Draw & End Turn Interface */}
              {isMyTurn && game.hasPlayedCard && (
                <div className="absolute -top-16 inset-x-0 flex justify-center gap-4 z-20 pointer-events-auto">
                  <button 
@@ -912,7 +997,7 @@ export default function App() {
 
                  <button 
                    onClick={() => drawAndEndTurn('tactics')}
-                   disabled={game.tacticsDeck.length === 0}
+                   disabled={!game.tacticsDeck || game.tacticsDeck.length === 0}
                    className="bg-orange-600 hover:bg-orange-700 disabled:bg-slate-400 text-white font-bold py-2 px-4 rounded-xl shadow-lg flex flex-col items-center gap-1 active:scale-95 transition-all"
                  >
                    <span className="text-xs opacity-80">戦術ドロー</span>
