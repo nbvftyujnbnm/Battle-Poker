@@ -9,6 +9,7 @@ import {
   getFirestore, 
   collection, 
   doc, 
+  getDoc, // 追加: 参加前に空き状況を確認するため
   setDoc, 
   onSnapshot, 
   updateDoc, 
@@ -25,10 +26,11 @@ import {
   Trophy,
   AlertCircle,
   Download,
-  Share2
+  Share2,
+  Eye // 追加: 観戦アイコン
 } from 'lucide-react';
 
-// --- Firebase Init (本番環境用設定を維持) ---
+// --- Firebase Init ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -229,7 +231,6 @@ export default function App() {
 
   // --- PWA & Mobile Setup ---
   useEffect(() => {
-    // 1. Inject PWA Meta Tags
     const metaTags = [
       { name: 'apple-mobile-web-app-capable', content: 'yes' },
       { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
@@ -247,11 +248,9 @@ export default function App() {
       el.content = tag.content;
     });
 
-    // 2. Prevent Context Menu (Long Press)
     const handleContext = (e) => e.preventDefault();
     document.addEventListener('contextmenu', handleContext);
 
-    // 3. Listen for Install Prompt
     const handleInstall = (e) => {
       e.preventDefault();
       setInstallPrompt(e);
@@ -343,11 +342,32 @@ export default function App() {
     setLoading(true);
     const code = inputCode.trim().toUpperCase();
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', code);
+    
     try {
-      await updateDoc(gameRef, { guest: user.uid });
+      // 1. まずゲームデータを取得して空き状況を確認
+      const gameSnap = await getDoc(gameRef);
+      if (!gameSnap.exists()) {
+        setError("ゲームが見つかりません。");
+        setLoading(false);
+        return;
+      }
+
+      const gameData = gameSnap.data();
+      
+      // 2. ゲストが空いているか、自分がすでに参加者かチェック
+      if (!gameData.guest) {
+        // 空席あり：ゲストとして参加
+        await updateDoc(gameRef, { guest: user.uid });
+      } else if (gameData.guest !== user.uid && gameData.host !== user.uid) {
+        // 満席かつ自分は部外者：観戦モードとしてIDのみセット（書き込みなし）
+        console.log("観戦モードで参加します");
+      }
+      // すでに入っている場合はそのままIDセット
+
       setGameId(code);
     } catch (e) {
-        setError("Could not join. Check code.");
+        console.error(e);
+        setError("参加エラー。コードを確認してください。");
     }
     setLoading(false);
   };
@@ -355,6 +375,9 @@ export default function App() {
   const playCard = async (flagIndex) => {
     if (!game || !user || selectedCardIdx === null) return;
     const isHost = user.uid === game.host;
+    // 部外者は操作不可
+    if (user.uid !== game.host && user.uid !== game.guest) return;
+
     if (game.turn !== (isHost ? 'host' : 'guest')) return;
 
     const newFlags = [...game.flags];
@@ -457,10 +480,17 @@ export default function App() {
 
   // Active Game
   const isHost = user.uid === game.host;
-  const isMe = isHost || user.uid === game.guest;
-  const myHand = isHost ? game.hostHand : game.guestHand;
-  const opponentHand = isHost ? game.guestHand : game.hostHand;
-  const isMyTurn = game.turn === (isHost ? 'host' : 'guest');
+  const isGuest = user.uid === game.guest;
+  const isSpectator = !isHost && !isGuest;
+  
+  // 観戦者はホスト視点で表示（ただし操作不能）
+  const viewAsHost = isHost || isSpectator;
+  
+  const myHand = viewAsHost ? game.hostHand : game.guestHand;
+  const opponentHand = viewAsHost ? game.guestHand : game.hostHand;
+  
+  // 部外者はターンがない
+  const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
   
   return (
     <div className="h-[100dvh] w-full bg-slate-100 flex flex-col overflow-hidden overscroll-y-none select-none touch-manipulation">
@@ -470,15 +500,21 @@ export default function App() {
           <span className="font-bold text-slate-800 text-lg hidden sm:inline">Battle Line</span>
         </div>
         
-        <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
-           <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>
-              <Users size={14} /> <span className="hidden xs:inline">Host</span>
+        {isSpectator ? (
+           <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs sm:text-sm font-bold flex items-center gap-1">
+             <Eye size={16} /> 観戦中
            </div>
-           <div className="text-slate-300">|</div>
-           <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-              <Users size={14} /> <span className="hidden xs:inline">Guest</span>
-           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
+             <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>
+                <Users size={14} /> <span className="hidden xs:inline">Host</span>
+             </div>
+             <div className="text-slate-300">|</div>
+             <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+                <Users size={14} /> <span className="hidden xs:inline">Guest</span>
+             </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <div className="bg-slate-100 px-2 py-1 rounded text-xs sm:text-sm font-mono flex items-center gap-2">
@@ -500,10 +536,11 @@ export default function App() {
               <h2 className="text-3xl font-black text-slate-800 mb-2">
                 {game.winner === (isHost ? 'host' : 'guest') ? "VICTORY!" : "DEFEAT"}
               </h2>
+              {isSpectator && <p className="text-slate-500 mb-4">{game.winner.toUpperCase()} WON!</p>}
               <button 
                 onClick={() => {
                    setGameId("");
-                   setGame(null); // Fix: Explicitly reset game state
+                   setGame(null);
                 }} 
                 className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 mt-6 active:scale-95"
               >
@@ -543,7 +580,7 @@ export default function App() {
                 key={idx} 
                 index={idx} 
                 data={flag} 
-                isHost={isHost} 
+                isHost={viewAsHost} 
                 onPlayToFlag={playCard}
                 canPlay={isMyTurn && selectedCardIdx !== null}
               />
@@ -565,9 +602,9 @@ export default function App() {
                  <div key={card.id} className="snap-center">
                     <Card 
                       card={card} 
-                      onClick={() => isMyTurn && setSelectedCardIdx(selectedCardIdx === i ? null : i)}
+                      onClick={() => !isSpectator && isMyTurn && setSelectedCardIdx(selectedCardIdx === i ? null : i)}
                       selected={selectedCardIdx === i}
-                      className="cursor-pointer shadow-md bg-white"
+                      className={`shadow-md bg-white ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
                     />
                  </div>
                ))}

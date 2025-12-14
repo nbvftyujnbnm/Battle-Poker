@@ -1,0 +1,29 @@
+[33mcommit dfa40d6acca01ace994c08ce081355766959170d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: nbvftyujnbnm <125369191+nbvftyujnbnm@users.noreply.github.com>
+Date:   Sun Dec 14 07:51:25 2025 +0000
+
+    fixed lobby issues
+
+[33mcommit fd5be10fc949db683acf39696e56f68eb4b706fa[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: nbvftyujnbnm <125369191+nbvftyujnbnm@users.noreply.github.com>
+Date:   Sun Dec 14 07:34:33 2025 +0000
+
+    v1
+
+[33mcommit 67425a501e89ca3edae743c178e5a6ccaafa2845[m
+Author: nbvftyujnbnm <125369191+nbvftyujnbnm@users.noreply.github.com>
+Date:   Sun Dec 14 06:28:08 2025 +0000
+
+    added App.jsx
+
+[33mcommit ab4bc892f1345c5f5adeb70e1355484d79f7b3d2[m
+Author: nbvftyujnbnm <125369191+nbvftyujnbnm@users.noreply.github.com>
+Date:   Sun Dec 14 06:25:48 2025 +0000
+
+    framework setup
+
+[33mcommit e1a5f2e5dbc1c2b4d33b74974ef46d13e37b9c95[m
+Author: nbvftyujnbnm <125369191+nbvftyujnbnm@users.noreply.github.com>
+Date:   Sun Dec 14 15:14:35 2025 +0900
+
+    Initial commit
