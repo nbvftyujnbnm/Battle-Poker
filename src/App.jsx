@@ -35,8 +35,12 @@ import {
   MessageCircle,
   Send,
   X,
-  Ban,         // 追加: 否認アイコン
-  ArrowRight   // 追加: ターン終了アイコン
+  Ban,
+  ArrowRight,
+  Cloud,      // 気象戦術用
+  Zap,        // 士気高揚用
+  Scroll,     // 謀略用
+  Layers      // 山札用
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -66,7 +70,7 @@ const createDeck = () => {
   let deck = [];
   COLORS.forEach(color => {
     VALUES.forEach(value => {
-      deck.push({ id: `${color}-${value}`, color, value });
+      deck.push({ id: `${color}-${value}`, color, value, type: 'number' });
     });
   });
   for (let i = deck.length - 1; i > 0; i--) {
@@ -76,10 +80,36 @@ const createDeck = () => {
   return deck;
 };
 
+// 戦術カードデッキの生成（ダミーデータ）
+const createTacticsDeck = () => {
+  const tactics = [
+    { id: 't-morale-1', type: 'tactics', subType: 'morale', name: 'Alexander', description: '任意の数字・色として扱えるワイルドカード' },
+    { id: 't-env-1', type: 'tactics', subType: 'environment', name: 'Fog', description: 'このフラッグは役が無効になり、合計値勝負になる' },
+    { id: 't-guile-1', type: 'tactics', subType: 'guile', name: 'Traitor', description: '相手のカードを1枚奪って自分の場に出す' },
+    // テスト用に枚数を増やす
+    { id: 't-morale-2', type: 'tactics', subType: 'morale', name: 'Darius', description: '任意の数字・色として扱える' },
+    { id: 't-env-2', type: 'tactics', subType: 'environment', name: 'Mud', description: 'このフラッグは4枚目のカードを出せるようになる' },
+    { id: 't-guile-2', type: 'tactics', subType: 'guile', name: 'Scout', description: '山札を3枚見て並べ替える' },
+  ];
+  // シャッフル
+  for (let i = tactics.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [tactics[i], tactics[j]] = [tactics[j], tactics[i]];
+  }
+  return tactics;
+};
+
 const evaluateFormation = (cards) => {
   if (cards.length !== 3) return { tier: 0, sum: 0 };
+  
+  // Note: 戦術カードの実装時にここを拡張する必要がありますが、
+  // 今回は「数字カード」のみを前提としたロジックを維持します。
+  // 混合した場合のエラーを防ぐため、念のため type check を入れるのが安全ですが
+  // 今回はインフラ構築のみのため既存ロジックを維持します。
+  const numberCards = cards.filter(c => c.type === 'number' || !c.type);
+  if (numberCards.length !== 3) return { tier: 0, sum: 0 }; // 暫定対応
 
-  const sorted = [...cards].sort((a, b) => a.value - b.value);
+  const sorted = [...numberCards].sort((a, b) => a.value - b.value);
   const values = sorted.map(c => c.value);
   const colors = sorted.map(c => c.color);
   const sum = values.reduce((a, b) => a + b, 0);
@@ -138,6 +168,31 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
     );
   }
 
+  // 戦術カードのスタイル
+  if (card.type === 'tactics') {
+    let typeColor = "bg-slate-200 border-slate-400 text-slate-700";
+    let TypeIcon = Zap;
+    if (card.subType === 'environment') { typeColor = "bg-emerald-100 border-emerald-400 text-emerald-700"; TypeIcon = Cloud; }
+    if (card.subType === 'guile') { typeColor = "bg-purple-100 border-purple-400 text-purple-700"; TypeIcon = Scroll; }
+    if (card.subType === 'morale') { typeColor = "bg-orange-100 border-orange-400 text-orange-700"; TypeIcon = Zap; }
+
+    return (
+      <div 
+        onClick={onClick}
+        className={`
+          relative w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none
+          ${typeColor}
+          ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : 'active:scale-95'}
+          ${className}
+        `}
+      >
+        <TypeIcon size={20} />
+        <span className="text-[10px] sm:text-xs font-bold text-center leading-tight mt-1 line-clamp-2">{card.name}</span>
+      </div>
+    );
+  }
+
+  // 通常カード
   const colorMap = {
     red: 'bg-red-100 text-red-600 border-red-300',
     orange: 'bg-orange-100 text-orange-600 border-orange-300',
@@ -164,7 +219,6 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
   );
 };
 
-// Update: onDeny追加
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   
@@ -187,6 +241,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
+      
+      {/* Flag Environment Status (気象戦術用UI) */}
+      {data.environment ? (
+         <div className="absolute -top-6 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10">
+           <Cloud size={10} /> {data.environment.name}
+         </div>
+      ) : null}
+
       <div className="flex flex-col gap-1">
         {[0, 1, 2].map(i => (
           <div key={`opp-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
@@ -240,7 +302,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
                 <XCircle size={12} />
               </button>
             ) : (
-              // 相手が請求中: 承認 or 否認
               <>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onConcede(index); }}
@@ -386,11 +447,12 @@ export default function App() {
     if (!user) return;
     setLoading(true);
     const newDeck = createDeck();
+    const tacticsDeck = createTacticsDeck(); // 新規: 戦術カード
     const hostHand = newDeck.splice(0, HAND_SIZE);
     const guestHand = newDeck.splice(0, HAND_SIZE);
 
     const initialFlags = Array(FLAGS_COUNT).fill(null).map(() => ({
-      hostCards: [], guestCards: [], owner: null, completedAt: null, proofClaim: null 
+      hostCards: [], guestCards: [], owner: null, completedAt: null, proofClaim: null, environment: null 
     }));
 
     const newGameId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -399,11 +461,14 @@ export default function App() {
       host: user.uid,
       guest: null,
       turn: 'host',
-      hasPlayedCard: false, // 追加: カードを出したか
+      hasPlayedCard: false,
       winner: null,
       deck: newDeck,
+      tacticsDeck: tacticsDeck, // 追加
       hostHand,
       guestHand,
+      hostGuile: [], // 追加: 謀略カード履歴
+      guestGuile: [], // 追加: 謀略カード履歴
       flags: initialFlags,
       chat: [], 
       createdAt: serverTimestamp(),
@@ -452,7 +517,7 @@ export default function App() {
     const isHost = user.uid === game.host;
     if (user.uid !== game.host && user.uid !== game.guest) return;
     if (game.turn !== (isHost ? 'host' : 'guest')) return;
-    if (game.hasPlayedCard) return; // 既にカードを出していたらプレイ不可
+    if (game.hasPlayedCard) return; 
 
     const newFlags = [...game.flags];
     const flag = { ...newFlags[flagIndex] };
@@ -466,7 +531,9 @@ export default function App() {
     hand.splice(selectedCardIdx, 1);
     flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
-    // Check simple full resolution
+    // 戦術カード（気象など）の効果はここで適用ロジックが必要だが、今回はインフラのみ。
+    // フラッグにカードを追加する処理は既存通り。
+
     if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
       const hostScore = evaluateFormation(flag.hostCards);
       const guestScore = evaluateFormation(flag.guestCards);
@@ -484,30 +551,53 @@ export default function App() {
     }
 
     newFlags[flagIndex] = flag;
-    const deck = [...game.deck];
-    if (deck.length > 0) hand.push(deck.shift());
-
+    
+    // 変更: ここでドローをしない。hasPlayedCardを立てるだけ。
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, {
       flags: newFlags,
       [myHandKey]: hand,
-      deck: deck,
-      hasPlayedCard: true, // カードプレイ済みにする（ターンはまだ変えない）
+      // deck: deck, // ドローしない
+      hasPlayedCard: true, 
       winner: checkWinner(newFlags) || null
-      // lastMoveはターン終了時に更新
     });
     setSelectedCardIdx(null);
   };
 
-  const endTurn = async () => {
+  // 新規: ドローしてターン終了
+  const drawAndEndTurn = async (deckType) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
-    if (game.turn !== (isHost ? 'host' : 'guest')) return;
-    if (!game.hasPlayedCard) return; // カードを出すまで終了不可
-
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myRole = isHost ? 'host' : 'guest';
     
-    // 自動否認ロジック: 自分が請求したまま残っているフラッグを取り消す
+    // ドロー処理
+    let newDeck = [];
+    let drawnCard = null;
+    let updateData = {};
+
+    if (deckType === 'normal') {
+      newDeck = [...game.deck];
+      if (newDeck.length > 0) {
+        drawnCard = newDeck.shift();
+        updateData.deck = newDeck;
+      }
+    } else if (deckType === 'tactics') {
+      newDeck = [...game.tacticsDeck];
+      if (newDeck.length > 0) {
+        drawnCard = newDeck.shift();
+        updateData.tacticsDeck = newDeck;
+      }
+    }
+
+    // 手札へ追加
+    const hand = [...game[myHandKey]];
+    if (drawnCard) {
+      hand.push(drawnCard);
+    }
+    updateData[myHandKey] = hand;
+
+    // 自動否認 & ターン交代
     const newFlags = game.flags.map(flag => {
       if (flag.proofClaim && flag.proofClaim.claimant === myRole) {
         return { ...flag, proofClaim: null };
@@ -515,13 +605,13 @@ export default function App() {
       return flag;
     });
 
+    updateData.flags = newFlags;
+    updateData.turn = isHost ? 'guest' : 'host';
+    updateData.hasPlayedCard = false;
+    updateData.lastMove = serverTimestamp();
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, {
-      flags: newFlags,
-      turn: isHost ? 'guest' : 'host',
-      hasPlayedCard: false,
-      lastMove: serverTimestamp()
-    });
+    await updateDoc(gameRef, updateData);
   };
 
   // --- Proof & Chat Actions ---
@@ -550,7 +640,6 @@ export default function App() {
 
   const denyFlag = async (flagIndex) => {
     if (!game || !user) return;
-    // 否認（取り消しと同じ処理だが、相手のアクション）
     const newFlags = [...game.flags];
     newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
@@ -645,7 +734,13 @@ export default function App() {
   
   const myHand = viewAsHost ? game.hostHand : game.guestHand;
   const opponentHand = viewAsHost ? game.guestHand : game.hostHand;
+  const opponentGuile = viewAsHost ? (game.guestGuile || []) : (game.hostGuile || []);
   const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
+
+  // 選択中のカード情報（戦術カード確認用）
+  const selectedDetails = selectedCardIdx !== null && myHand[selectedCardIdx] && myHand[selectedCardIdx].type === 'tactics' 
+    ? myHand[selectedCardIdx] 
+    : null;
   
   return (
     <div className="h-[100dvh] w-full bg-slate-100 flex flex-col overflow-hidden overscroll-y-none select-none touch-manipulation">
@@ -692,6 +787,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* Chat Overlay */}
       {isChatOpen && (
         <div 
           className="absolute inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/20"
@@ -707,27 +803,19 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
                {game.chat && game.chat.length > 0 ? (
-                 game.chat.map((msg, i) => {
-                   const isMe = (isHost && msg.sender === 'host') || (isGuest && msg.sender === 'guest');
-                   return (
-                     <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                 game.chat.map((msg, i) => (
+                   <div key={i} className={`flex flex-col ${(isHost && msg.sender === 'host') || (isGuest && msg.sender === 'guest') ? 'items-end' : 'items-start'}`}>
                        <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
-                         isMe ? 'bg-blue-600 text-white rounded-br-none' : 
+                         (isHost && msg.sender === 'host') || (isGuest && msg.sender === 'guest') ? 'bg-blue-600 text-white rounded-br-none' : 
                          msg.sender === 'host' ? 'bg-blue-100 text-blue-900 rounded-bl-none' : 
                          'bg-red-100 text-red-900 rounded-bl-none'
                        }`}>
                          {msg.text}
                        </div>
-                       <span className="text-[10px] text-slate-400 mt-1">
-                         {msg.sender === 'host' ? 'Host' : 'Guest'}
-                       </span>
-                     </div>
-                   );
-                 })
+                   </div>
+                 ))
                ) : (
-                 <div className="text-center text-slate-400 text-sm mt-10">
-                   No messages yet.<br/>Use chat to explain proofs.
-                 </div>
+                 <div className="text-center text-slate-400 text-sm mt-10">No messages yet.</div>
                )}
                <div ref={chatEndRef}></div>
             </div>
@@ -735,13 +823,10 @@ export default function App() {
               <form onSubmit={sendMessage} className="p-3 border-t bg-white flex gap-2 shrink-0">
                 <input 
                    className="flex-1 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                   placeholder="Type a message..."
                    value={chatMessage}
                    onChange={(e) => setChatMessage(e.target.value)}
                 />
-                <button type="submit" className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-900">
-                  <Send size={18} />
-                </button>
+                <button type="submit" className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-900"><Send size={18} /></button>
               </form>
             )}
           </div>
@@ -750,45 +835,27 @@ export default function App() {
 
       <main className="flex-1 relative flex flex-col items-center justify-between overflow-hidden pb-[env(safe-area-inset-bottom)]">
         
-        {/* Game Over */}
-        {game.winner && (
-          <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center backdrop-blur-sm p-4">
-            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl text-center w-full max-w-sm">
-              <Crown className="w-16 h-16 sm:w-20 sm:h-20 mx-auto text-yellow-500 mb-4" />
-              <h2 className="text-3xl font-black text-slate-800 mb-2">
-                {game.winner === (isHost ? 'host' : 'guest') ? "VICTORY!" : "DEFEAT"}
-              </h2>
-              {isSpectator && <p className="text-slate-500 mb-4">{game.winner.toUpperCase()} WON!</p>}
-              <button 
-                onClick={() => {
-                   setGameId("");
-                   setGame(null);
-                }} 
-                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 mt-6 active:scale-95"
-              >
-                <RotateCcw size={18} /> Return to Lobby
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!game.guest && (
-          <div className="absolute top-4 z-40 w-full flex justify-center">
-            <div className="bg-blue-50 border border-blue-200 px-4 py-2 rounded-full flex items-center gap-2 animate-pulse shadow-lg mx-4 text-center">
-               <Share2 className="w-4 h-4 text-blue-500" />
-               <span className="text-blue-700 text-xs sm:text-sm font-medium">Waiting for opponent... Code: <b>{gameId}</b></span>
-            </div>
-          </div>
-        )}
-
-        <div className="w-full flex justify-center py-2 bg-slate-100/50 flex-shrink-0 min-h-[60px] sm:min-h-[80px]">
-           <div className="flex gap-1 overflow-x-auto px-4 no-scrollbar items-end h-full">
+        {/* Opponent Area (Top) */}
+        <div className="w-full flex justify-between items-end py-2 bg-slate-100/50 flex-shrink-0 min-h-[60px] sm:min-h-[80px] px-2">
+           {/* 相手の手札 */}
+           <div className="flex gap-1 overflow-x-auto px-4 no-scrollbar items-end h-full flex-1 justify-center">
              {opponentHand && opponentHand.map((_, i) => (
                <Card key={`enemy-${i}`} hidden className="scale-75 origin-bottom" />
              ))}
            </div>
+           
+           {/* 相手の謀略カード履歴 (Guile Zone) */}
+           <div className="w-24 h-full border-l border-slate-300 pl-2 flex flex-col justify-end items-center opacity-70">
+              <span className="text-[10px] text-slate-500 font-bold mb-1">Played Guile</span>
+              <div className="flex flex-wrap gap-1 justify-center">
+                {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (
+                  <div key={i} className="w-4 h-6 bg-purple-200 border border-purple-400 rounded-sm"></div>
+                )) : <div className="text-[10px] text-slate-400">-</div>}
+              </div>
+           </div>
         </div>
 
+        {/* Board Area */}
         <div 
            ref={flagsContainerRef}
            className="w-full flex-1 overflow-x-auto overflow-y-hidden snap-x snap-mandatory flex items-center py-2 sm:py-4 px-4 sm:px-0 no-scrollbar touch-pan-x"
@@ -803,7 +870,7 @@ export default function App() {
                 onPlayToFlag={playCard}
                 onClaim={claimFlag}
                 onConcede={concedeFlag}
-                onDeny={denyFlag} // Added
+                onDeny={denyFlag}
                 onCancelClaim={cancelClaim}
                 canPlay={isMyTurn && selectedCardIdx !== null}
                 isSpectator={isSpectator}
@@ -813,6 +880,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* Player Area */}
         <div className="w-full bg-white border-t border-slate-200 p-2 pb-2 sm:p-4 z-10 flex-shrink-0">
           <div className="relative w-full max-w-4xl mx-auto">
              {isMyTurn && (
@@ -820,15 +888,35 @@ export default function App() {
                    YOUR TURN
                 </div>
              )}
+
+             {/* Selected Tactics Info Overlay */}
+             {selectedDetails && (
+               <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white p-3 rounded-lg shadow-lg w-64 z-30 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
+                 <h4 className="font-bold text-yellow-400 flex items-center justify-center gap-2">
+                   {selectedDetails.name}
+                 </h4>
+                 <p className="text-xs mt-1 leading-snug">{selectedDetails.description}</p>
+               </div>
+             )}
              
-             {/* Turn End Button */}
+             {/* Draw & End Turn Interface */}
              {isMyTurn && game.hasPlayedCard && (
-               <div className="absolute -top-14 right-4 z-20">
+               <div className="absolute -top-16 inset-x-0 flex justify-center gap-4 z-20 pointer-events-auto">
                  <button 
-                   onClick={endTurn}
-                   className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-lg flex items-center gap-2 animate-bounce"
+                   onClick={() => drawAndEndTurn('normal')}
+                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg flex flex-col items-center gap-1 active:scale-95 transition-all"
                  >
-                   End Turn <ArrowRight size={16} />
+                   <span className="text-xs opacity-80">通常ドロー</span>
+                   <span className="flex items-center gap-1"><Layers size={16}/> 終了</span>
+                 </button>
+
+                 <button 
+                   onClick={() => drawAndEndTurn('tactics')}
+                   disabled={game.tacticsDeck.length === 0}
+                   className="bg-orange-600 hover:bg-orange-700 disabled:bg-slate-400 text-white font-bold py-2 px-4 rounded-xl shadow-lg flex flex-col items-center gap-1 active:scale-95 transition-all"
+                 >
+                   <span className="text-xs opacity-80">戦術ドロー</span>
+                   <span className="flex items-center gap-1"><Zap size={16}/> 終了</span>
                  </button>
                </div>
              )}
@@ -847,8 +935,9 @@ export default function App() {
                <div className="w-2 flex-shrink-0 sm:hidden"></div>
              </div>
              
-             <div className="text-center text-[10px] sm:text-xs text-slate-400 mt-1">
-                Deck: {game.deck.length} remaining
+             <div className="flex justify-between text-[10px] sm:text-xs text-slate-400 mt-1 px-4">
+                <span>Normal Deck: {game.deck.length}</span>
+                <span>Tactics Deck: {game.tacticsDeck ? game.tacticsDeck.length : 0}</span>
              </div>
           </div>
         </div>
