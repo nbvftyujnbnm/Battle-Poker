@@ -45,7 +45,8 @@ import {
   Info,
   Trash2,
   Reply,
-  Move
+  Move,
+  HelpCircle // 追加: ヘルプアイコン
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -254,7 +255,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, canPlay, isSpectator, isMyTurn, interactionMode }) => {
+// FlagSpot: Added onZoom handler
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
   let Icon = Shield;
@@ -292,7 +294,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
             <div key={`opp-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
                  <div className="relative">
-                   <Card card={card} onClick={() => canInteract && onCardClick && onCardClick(index, i, isHost ? 'guest' : 'host')} className={canInteract ? 'ring-2 ring-red-500 cursor-pointer hover:scale-105 z-20' : ''}/>
+                   <Card 
+                     card={card} 
+                     onClick={() => {
+                        if (canInteract && onCardClick) onCardClick(index, i, isHost ? 'guest' : 'host');
+                        else if (!interactionMode && onZoom) onZoom(card);
+                     }} 
+                     className={canInteract ? 'ring-2 ring-red-500 cursor-pointer hover:scale-105 z-20' : ''}
+                   />
                    {canInteract && <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-lg pointer-events-none"><Trash2 className="text-red-600"/></div>}
                  </div>
                ) : <div className="w-10 h-14 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-top" />}
@@ -346,13 +355,81 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
             <div key={`my-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
                  <div className="relative">
-                   <Card card={card} onClick={() => canRedeploy && onCardClick && onCardClick(index, i, isHost ? 'host' : 'guest')} className={canRedeploy ? 'ring-2 ring-blue-500 cursor-pointer hover:scale-105 z-20' : ''}/>
+                   <Card 
+                     card={card} 
+                     onClick={() => {
+                        if (canRedeploy && onCardClick) onCardClick(index, i, isHost ? 'host' : 'guest');
+                        else if (!interactionMode && onZoom) onZoom(card);
+                     }}
+                     className={canRedeploy ? 'ring-2 ring-blue-500 cursor-pointer hover:scale-105 z-20' : ''}
+                   />
                    {canRedeploy && <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-lg pointer-events-none"><Move className="text-blue-600"/></div>}
                  </div>
                ) : <div className="w-10 h-14 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />}
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+};
+
+// --- New Help Modal Component ---
+const HelpModal = ({ onClose }) => {
+  const [tab, setTab] = useState('rules');
+  const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
+    const x = acc.find(item => item.id === current.id || item.name === current.name);
+    if (!x) return acc.concat([current]);
+    return acc;
+  }, []), []);
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex border-b">
+          <button onClick={() => setTab('rules')} className={`flex-1 py-3 font-bold ${tab === 'rules' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`}>Rules</button>
+          <button onClick={() => setTab('tactics')} className={`flex-1 py-3 font-bold ${tab === 'tactics' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-slate-500'}`}>Tactics</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-slate-700">
+          {tab === 'rules' ? (
+            <>
+              <h3 className="font-bold text-lg">勝利条件</h3>
+              <p>9つのフラッグのうち、<span className="font-bold text-red-600">3つ連続</span>するか、<span className="font-bold text-red-600">合計5つ</span>を獲得したプレイヤーの勝利です。</p>
+              
+              <h3 className="font-bold text-lg mt-4">役の強さ</h3>
+              <ul className="list-decimal list-inside space-y-1 ml-2">
+                <li><span className="font-bold text-blue-600">ウェッジ (Wedge)</span>: 同色・連番 (最強)</li>
+                <li><span className="font-bold text-blue-600">ファランクス (Phalanx)</span>: 同数 (3 of a kind)</li>
+                <li><span className="font-bold text-blue-600">バタリオン (Battalion)</span>: 同色 (フラッシュ)</li>
+                <li><span className="font-bold text-blue-600">スカーミッシャー (Skirmish)</span>: 連番 (ストレート)</li>
+                <li><span className="font-bold text-blue-600">ホスト (Host)</span>: 役なし (合計値勝負)</li>
+              </ul>
+              
+              <h3 className="font-bold text-lg mt-4">証明 (Claim)</h3>
+              <p>自分のターン開始時に、まだ埋まりきっていないフラッグでも、相手がどうカードを出しても勝てないことが確定している場合、そのフラッグの獲得を証明（請求）できます。</p>
+            </>
+          ) : (
+            <div className="space-y-3">
+              {tactics.map(card => (
+                <div key={card.name} className="border p-3 rounded-lg flex gap-3 items-start">
+                  <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
+                    card.subType === 'environment' ? 'bg-emerald-100 text-emerald-600' : 
+                    card.subType === 'guile' ? 'bg-purple-100 text-purple-600' : 
+                    'bg-orange-100 text-orange-600'
+                  }`}>
+                    {card.subType === 'environment' ? <Cloud size={16}/> : card.subType === 'guile' ? <Scroll size={16}/> : <Zap size={16}/>}
+                  </div>
+                  <div>
+                    <div className="font-bold">{card.name}</div>
+                    <div className="text-xs text-slate-500 mb-1 capitalize">{card.subType}</div>
+                    <div className="text-xs leading-relaxed">{card.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button onClick={onClose} className="p-4 bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">Close</button>
       </div>
     </div>
   );
@@ -369,9 +446,10 @@ export default function App() {
   const flagsContainerRef = useRef(null);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false); // 追加: ヘルプ
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
-  const [viewingCard, setViewingCard] = useState(null);
+  const [viewingCard, setViewingCard] = useState(null); // 拡大表示用
   
   const [interactionMode, setInteractionMode] = useState(null);
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
@@ -765,7 +843,6 @@ export default function App() {
     }
     else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
       const newFlags = [...game.flags];
-      
       const isSameFlag = selectedBoardCard.flagIndex === flagIndex;
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
       const targetFlag = isSameFlag ? sourceFlag : { ...newFlags[flagIndex] };
@@ -1013,28 +1090,37 @@ export default function App() {
           <Shield className="text-blue-600 w-6 h-6" />
           <span className="font-bold text-slate-800 text-lg hidden sm:inline">Battle Line</span>
         </div>
-        {isSpectator ? (
-           <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs sm:text-sm font-bold flex items-center gap-1"><Eye size={16} /> 観戦中</div>
-        ) : (
-          <div className="flex items-center gap-2">
-             <button onClick={() => setIsChatOpen(!isChatOpen)} className="relative p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 mr-2">
-                <MessageCircle size={20} />
-                {unreadCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border border-white"></span>}
-             </button>
-             <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
-               <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}><Users size={14} /> <span className="hidden xs:inline">Host</span></div>
-               <div className="text-slate-300">|</div>
-               <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}><Users size={14} /> <span className="hidden xs:inline">Guest</span></div>
-             </div>
-          </div>
-        )}
+        
         <div className="flex items-center gap-2">
+          {/* Help Button */}
+          <button onClick={() => setIsHelpOpen(true)} className="p-2 rounded-full hover:bg-slate-100 text-slate-600">
+            <HelpCircle size={20} />
+          </button>
+
+          {isSpectator ? (
+             <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs sm:text-sm font-bold flex items-center gap-1"><Eye size={16} /> 観戦中</div>
+          ) : (
+            <div className="flex items-center gap-2">
+               <button onClick={() => setIsChatOpen(!isChatOpen)} className="relative p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 mr-2">
+                  <MessageCircle size={20} />
+                  {unreadCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border border-white"></span>}
+               </button>
+               <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
+                 <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}><Users size={14} /> <span className="hidden xs:inline">Host</span></div>
+                 <div className="text-slate-300">|</div>
+                 <div className={`flex items-center gap-1 ${game.turn === 'guest' ? 'text-red-600 font-bold' : 'text-slate-400'}`}><Users size={14} /> <span className="hidden xs:inline">Guest</span></div>
+               </div>
+            </div>
+          )}
           <div className="bg-slate-100 px-2 py-1 rounded text-xs sm:text-sm font-mono flex items-center gap-2">
             {gameId}
             <button onClick={() => { navigator.clipboard.writeText(gameId); }} className="active:text-blue-600"><Copy size={12} /></button>
           </div>
         </div>
       </header>
+
+      {/* Help Modal */}
+      {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
 
       {/* Chat Overlay */}
       {isChatOpen && (
@@ -1064,15 +1150,30 @@ export default function App() {
         </div>
       )}
 
+      {/* Card Detail / Zoom Overlay */}
       {viewingCard && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setViewingCard(null)}>
-           <div className="bg-white p-6 rounded-xl shadow-2xl max-w-xs w-full text-center" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-center mb-2 text-slate-700">
-                {viewingCard.subType === 'environment' ? <Cloud size={48} className="text-emerald-500"/> : viewingCard.subType === 'guile' ? <Scroll size={48} className="text-purple-500"/> : <Zap size={48} className="text-orange-500"/>}
-              </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">{viewingCard.name}</h3>
-              <p className="text-slate-600 mb-6">{viewingCard.description}</p>
-              <button onClick={() => setViewingCard(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-900 w-full">Close</button>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setViewingCard(null)}>
+           <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-xs w-full text-center transform scale-110" onClick={(e) => e.stopPropagation()}>
+              {viewingCard.type === 'tactics' ? (
+                <>
+                  <div className="flex justify-center mb-4 text-slate-700">
+                    {viewingCard.subType === 'environment' ? <Cloud size={64} className="text-emerald-500"/> : viewingCard.subType === 'guile' ? <Scroll size={64} className="text-purple-500"/> : <Zap size={64} className="text-orange-500"/>}
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-800 mb-2">{viewingCard.name}</h3>
+                  <div className="inline-block bg-slate-100 text-slate-500 text-xs px-2 py-1 rounded mb-4 capitalize">{viewingCard.subType} Tactic</div>
+                  <p className="text-slate-600 mb-6 text-sm leading-relaxed">{viewingCard.description}</p>
+                </>
+              ) : (
+                <>
+                  <div className={`w-32 h-48 mx-auto rounded-xl border-4 shadow-md flex flex-col items-center justify-between p-2 mb-4 bg-${viewingCard.color}-100 text-${viewingCard.color}-600 border-${viewingCard.color}-300`}>
+                    <span className="text-4xl font-bold self-start">{viewingCard.value}</span>
+                    <div className="w-12 h-12 rounded-full opacity-50 bg-current"></div>
+                    <span className="text-4xl font-bold self-end rotate-180">{viewingCard.value}</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-6 capitalize">{viewingCard.color} Troop</h3>
+                </>
+              )}
+              <button onClick={() => setViewingCard(null)} className="bg-slate-800 text-white px-6 py-3 rounded-xl hover:bg-slate-900 w-full font-bold">Close</button>
            </div>
         </div>
       )}
@@ -1109,6 +1210,7 @@ export default function App() {
                 onPlayToFlag={playCard} onClaim={claimFlag} onConcede={concedeFlag} onDeny={denyFlag} onCancelClaim={cancelClaim} 
                 onEnvironmentClick={setViewingCard}
                 onCardClick={handleBoardCardClick} onFlagClick={handleFlagInteractionClick}
+                onZoom={setViewingCard} // 拡大表示ハンドラ
                 canPlay={isMyTurn && selectedCardIdx !== null && !interactionMode}
                 isSpectator={isSpectator} isMyTurn={isMyTurn} interactionMode={interactionMode}
               />
@@ -1175,9 +1277,10 @@ export default function App() {
                       onClick={() => {
                         if (interactionMode === 'scout_return') handleScoutReturn(i);
                         else if (!isSpectator && isMyTurn && !interactionMode && !game.hasPlayedCard) setSelectedCardIdx(selectedCardIdx === i ? null : i);
+                        else if (!interactionMode) setViewingCard(card); // 自分の手札も拡大確認可能に
                       }}
                       selected={selectedCardIdx === i}
-                      disabled={!isMyTurn && !interactionMode}
+                      disabled={!isMyTurn && !interactionMode && !isSpectator} // 観戦者以外は自分のターン外でも拡大のみ可能にするため条件緩和
                       className={`shadow-md bg-white ${isSpectator ? 'cursor-default' : 'cursor-pointer'} ${!isMyTurn || (game.hasPlayedCard && !interactionMode) ? 'opacity-50' : ''} ${interactionMode === 'scout_return' ? 'ring-2 ring-purple-500 animate-pulse' : ''}`}
                     />
                     {interactionMode === 'scout_return' && <div className="absolute -top-2 -right-2 bg-purple-600 text-white rounded-full p-1 shadow-sm z-20 pointer-events-none"><Reply size={12}/></div>}
