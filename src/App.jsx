@@ -45,7 +45,7 @@ import {
   Info,
   Trash2,
   Reply,
-  Move // 追加: 移動用アイコン
+  Move
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -96,7 +96,7 @@ const createTacticsDeck = () => {
     { id: 't-fog', type: 'tactics', subType: 'environment', name: 'Fog', description: '【霧】このフラッグは役が無効になり、合計値勝負になる。' },
     { id: 't-mud', type: 'tactics', subType: 'environment', name: 'Mud', description: '【泥濘】このフラッグは4枚のカードでフォーメーションを作る。' },
     { id: 't-scout', type: 'tactics', subType: 'guile', name: 'Scout', description: '【偵察】山札から合計3枚引き、手札から2枚を山札に戻す。' },
-    { id: 't-redeploy', type: 'tactics', subType: 'guile', name: 'Redeploy', description: '【配置転換】自分のカードを移動または破棄。' },
+    { id: 't-redeploy', type: 'tactics', subType: 'guile', name: 'Redeploy', description: '【配置転換】自分のカードを別のフラッグへ移動、または破棄する。' },
     { id: 't-deserter', type: 'tactics', subType: 'guile', name: 'Deserter', description: '【脱走】相手のカードを1枚選び、ゲームから除外する。' },
     { id: 't-traitor', type: 'tactics', subType: 'guile', name: 'Traitor', description: '【裏切り】相手のカードを奪い、自分のフラッグに配置する。' },
   ];
@@ -245,7 +245,6 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// Update: onFlagClick added for target selection
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, canPlay, isSpectator, isMyTurn, interactionMode }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -262,11 +261,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  
-  // Helpers for interaction targeting
-  const isTargetMode = interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action';
-  // Targetable if not owned and has space
-  const isTargetable = isTargetMode && !data.owner && (isHost ? !hostFull : !guestFull);
+  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
@@ -279,12 +274,9 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       <div className="flex flex-col gap-1">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
-          // Traitor Target: Opponent's card
-          const isOpponentCard = true; // Opponent slots
+          const isOpponentCard = true;
           const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard;
-          // Deserter Target: Opponent's card
           const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard;
-          
           const canInteract = canTraitor || canDeserter;
 
           return (
@@ -302,9 +294,9 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
 
       <div className="relative z-10">
         <button 
-          disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !isTargetable}
+          disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !(interactionMode === 'select_traitor_target' && !data.owner && (isHost ? !hostFull : !guestFull)) && !(interactionMode === 'redeploy_action' && !data.owner && (isHost ? !hostFull : !guestFull))}
           onClick={() => {
-            if (isTargetable && onFlagClick) onFlagClick(index);
+            if ((interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && onFlagClick) onFlagClick(index);
             else onPlayToFlag(index);
           }}
           className={`
@@ -312,7 +304,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
             ${statusColor}
             ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
             ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
-            ${isTargetable ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
+            ${(interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !data.owner && (isHost ? !hostFull : !guestFull) ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
           `}
         >
           {data.owner ? <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
@@ -339,7 +331,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.hostCards[i] : data.guestCards[i];
-          // Redeploy Source: My Card
           const canRedeploy = interactionMode === 'select_redeploy_source' && card && !data.owner;
           
           return (
@@ -376,7 +367,7 @@ export default function App() {
   const [interactionMode, setInteractionMode] = useState(null);
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
   const [scoutReturnCount, setScoutReturnCount] = useState(0);
-  const [selectedBoardCard, setSelectedBoardCard] = useState(null); // { flagIndex, cardIndex, side }
+  const [selectedBoardCard, setSelectedBoardCard] = useState(null);
   
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
@@ -670,7 +661,6 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
     
-    // Deserter: Target Opponent & Destroy
     if (interactionMode === 'select_deserter_target') {
       const targetIsGuest = side === 'guest';
       if (isHost === !targetIsGuest) return; 
@@ -691,14 +681,12 @@ export default function App() {
       setInteractionMode(null);
       setSelectedCardIdx(null);
     }
-    // Redeploy: Select Own Source
     else if (interactionMode === 'select_redeploy_source') {
       const targetIsHost = side === 'host';
       if (isHost !== targetIsHost) return;
       setSelectedBoardCard({ flagIndex, cardIndex, side });
       setInteractionMode('redeploy_action');
     }
-    // Traitor: Select Opponent Source
     else if (interactionMode === 'select_traitor_source') {
       const targetIsGuest = side === 'guest';
       if (isHost === !targetIsGuest) return;
@@ -714,16 +702,15 @@ export default function App() {
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
 
-    // Redeploy Action: Move to new flag
     if (interactionMode === 'redeploy_action' && selectedBoardCard) {
-      if (flagIndex === selectedBoardCard.flagIndex) return; // Must move to different flag
+      if (flagIndex === selectedBoardCard.flagIndex) return; 
       const newFlags = [...game.flags];
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
       const targetFlag = { ...newFlags[flagIndex] };
       
       const isMud = targetFlag.environment?.name === 'Mud';
       const maxSlots = isMud ? 4 : 3;
-      if (targetFlag[myCardsKey].length >= maxSlots) return; // Full
+      if (targetFlag[myCardsKey].length >= maxSlots) return;
 
       const sourceCards = [...sourceFlag[myCardsKey]];
       const cardToMove = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
@@ -752,7 +739,6 @@ export default function App() {
       setSelectedBoardCard(null);
       setSelectedCardIdx(null);
     }
-    // Traitor Action: Move opponent card to my flag
     else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
       const newFlags = [...game.flags];
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
@@ -764,7 +750,20 @@ export default function App() {
 
       const oppCardsKey = selectedBoardCard.side === 'host' ? 'hostCards' : 'guestCards';
       const sourceCards = [...sourceFlag[oppCardsKey]];
-      const cardToMove = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
+      const cardToMove = sourceCards[selectedBoardCard.cardIndex]; // copy reference to check
+
+      // 【修正点】Traitorでリーダーカードを奪う際の制限チェック
+      if (cardToMove.name === 'Alexander' || cardToMove.name === 'Darius') {
+         const alreadyUsedLeader = game.flags.some(f => 
+           f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius')
+         );
+         if (alreadyUsedLeader) {
+           // 本来はアラートを出すべきだが、ここでは操作をキャンセルするのみ
+           return; 
+         }
+      }
+
+      sourceCards.splice(selectedBoardCard.cardIndex, 1);
       sourceFlag[oppCardsKey] = sourceCards;
 
       const targetCards = [...targetFlag[myCardsKey]];
