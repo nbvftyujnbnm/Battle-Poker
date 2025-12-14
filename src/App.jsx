@@ -215,8 +215,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
     const bgClass = isTactics ? 'bg-orange-900 border-orange-700' : 'bg-slate-700 border-slate-600';
     const innerClass = isTactics ? 'bg-orange-800' : 'bg-slate-600';
     return (
-      <div className={`w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex items-center justify-center flex-shrink-0 ${bgClass} ${className}`}>
-        <div className={`w-8 h-12 rounded-sm opacity-50 ${innerClass}`}></div>
+      <div className={`w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex items-center justify-center flex-shrink-0 ${bgClass} ${className}`}>
+        <div className={`w-6 h-10 rounded-sm opacity-50 ${innerClass}`}></div>
       </div>
     );
   }
@@ -229,9 +229,9 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
     if (card.subType === 'morale') { typeColor = "bg-orange-100 border-orange-400 text-orange-700"; TypeIcon = Zap; }
 
     return (
-      <div onClick={!disabled ? onClick : undefined} className={`relative w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${typeColor} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
+      <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${typeColor} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
         <TypeIcon size={20} />
-        <span className="text-[10px] sm:text-xs font-bold text-center leading-tight mt-1 line-clamp-2">{card.name}</span>
+        <span className="text-[9px] sm:text-xs font-bold text-center leading-tight mt-0.5 line-clamp-2">{card.name}</span>
       </div>
     );
   }
@@ -246,10 +246,10 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   };
 
   return (
-    <div onClick={!disabled ? onClick : undefined} className={`relative w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-between p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${colorMap[card.color]} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
-      <span className="text-xs sm:text-sm font-bold self-start leading-none">{card.value}</span>
-      <div className={`w-3 h-3 sm:w-4 sm:h-4 rounded-full opacity-50 bg-current`} />
-      <span className="text-xs sm:text-sm font-bold self-end leading-none rotate-180">{card.value}</span>
+    <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-between p-0.5 sm:p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${colorMap[card.color]} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
+      <span className="text-[10px] sm:text-sm font-bold self-start leading-none">{card.value}</span>
+      <div className={`w-2.5 h-2.5 sm:w-4 sm:h-4 rounded-full opacity-50 bg-current`} />
+      <span className="text-[10px] sm:text-sm font-bold self-end leading-none rotate-180">{card.value}</span>
     </div>
   );
 };
@@ -273,14 +273,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   return (
-    <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
+    <div className="flex flex-col items-center gap-0.5 sm:gap-2 snap-center flex-shrink-0 px-0.5 relative">
       {data.environment ? (
-         <button onClick={(e) => { e.stopPropagation(); onEnvironmentClick(data.environment); }} className="absolute -top-7 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10 hover:bg-emerald-200 active:scale-95">
-           <Cloud size={10} /> <span className="max-w-[60px] truncate">{data.environment.name}</span><Info size={10} className="opacity-50"/>
+         <button onClick={(e) => { e.stopPropagation(); onEnvironmentClick(data.environment); }} className="absolute -top-6 bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded-full text-[9px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10 hover:bg-emerald-200 active:scale-95">
+           <Cloud size={10} /> <span className="max-w-[50px] truncate">{data.environment.name}</span><Info size={8} className="opacity-50"/>
          </button>
       ) : null}
 
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-0.5">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
           const isOpponentCard = true;
@@ -289,19 +289,19 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
           const canInteract = canTraitor || canDeserter;
 
           return (
-            <div key={`opp-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
+            <div key={`opp-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
                  <div className="relative">
                    <Card card={card} onClick={() => canInteract && onCardClick && onCardClick(index, i, isHost ? 'guest' : 'host')} className={canInteract ? 'ring-2 ring-red-500 cursor-pointer hover:scale-105 z-20' : ''}/>
                    {canInteract && <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-lg pointer-events-none"><Trash2 className="text-red-600"/></div>}
                  </div>
-               ) : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-top" />}
+               ) : <div className="w-10 h-14 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-top" />}
             </div>
           );
         })}
       </div>
 
-      <div className="relative z-10">
+      <div className="relative z-10 my-1">
         <button 
           disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !(interactionMode === 'select_traitor_target' && !data.owner && (isHost ? !hostFull : !guestFull)) && !(interactionMode === 'redeploy_action' && !data.owner && (isHost ? !hostFull : !guestFull))}
           onClick={() => {
@@ -309,16 +309,16 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
             else onPlayToFlag(index);
           }}
           className={`
-            w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
+            w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 sm:border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
             ${statusColor}
             ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
             ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
             ${(interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !data.owner && (isHost ? !hostFull : !guestFull) ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
           `}
         >
-          {data.owner ? <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
-           hasClaim ? <Gavel className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" /> : 
-           <span className="text-gray-400 text-xs font-bold">{index + 1}</span>}
+          {data.owner ? <Icon className={`w-4 h-4 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
+           hasClaim ? <Gavel className="w-4 h-4 sm:w-6 sm:h-6 text-purple-600" /> : 
+           <span className="text-gray-400 text-[10px] sm:text-xs font-bold">{index + 1}</span>}
         </button>
 
         {showActions && (
@@ -337,19 +337,19 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
         )}
       </div>
 
-      <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
+      <div className="flex flex-col-reverse gap-0.5">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const card = isHost ? data.hostCards[i] : data.guestCards[i];
           const canRedeploy = interactionMode === 'select_redeploy_source' && card && !data.owner;
           
           return (
-            <div key={`my-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
+            <div key={`my-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
                  <div className="relative">
                    <Card card={card} onClick={() => canRedeploy && onCardClick && onCardClick(index, i, isHost ? 'host' : 'guest')} className={canRedeploy ? 'ring-2 ring-blue-500 cursor-pointer hover:scale-105 z-20' : ''}/>
                    {canRedeploy && <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-lg pointer-events-none"><Move className="text-blue-600"/></div>}
                  </div>
-               ) : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />}
+               ) : <div className="w-10 h-14 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />}
             </div>
           );
         })}
@@ -540,7 +540,6 @@ export default function App() {
     
     let updateData = {};
 
-    // Helper to check availability for Tactics
     const hasValidTarget = (targetIsMine) => {
        const targetKey = targetIsMine 
          ? (isHost ? 'hostCards' : 'guestCards')
@@ -766,8 +765,10 @@ export default function App() {
     }
     else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
       const newFlags = [...game.flags];
+      
+      const isSameFlag = selectedBoardCard.flagIndex === flagIndex;
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
-      const targetFlag = { ...newFlags[flagIndex] };
+      const targetFlag = isSameFlag ? sourceFlag : { ...newFlags[flagIndex] };
       
       const isMud = targetFlag.environment?.name === 'Mud';
       const maxSlots = isMud ? 4 : 3;
@@ -794,7 +795,7 @@ export default function App() {
       targetFlag[myCardsKey] = targetCards;
 
       newFlags[selectedBoardCard.flagIndex] = sourceFlag;
-      newFlags[flagIndex] = targetFlag;
+      if (!isSameFlag) newFlags[flagIndex] = targetFlag;
 
       const hand = [...game[myHandKey]];
       const playedCard = hand[selectedCardIdx];
@@ -1094,8 +1095,8 @@ export default function App() {
            </div>
            <div className="w-24 h-full border-l border-slate-300 pl-2 flex flex-col justify-end items-center opacity-70">
               <span className="text-[10px] text-slate-500 font-bold mb-1">Played Guile</span>
-              <div className="flex flex-wrap gap-1 justify-center">
-                {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-5 h-7 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform"><Scroll size={10} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400">-</div>}
+              <div className="flex flex-wrap gap-1 justify-center max-h-20 overflow-y-auto">
+                {opponentGuile.length > 0 ? opponentGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-5 h-7 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform flex-shrink-0"><Scroll size={10} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400">-</div>}
               </div>
            </div>
         </div>
@@ -1120,8 +1121,8 @@ export default function App() {
              {/* My Guile Zone */}
              <div className="absolute -top-24 right-2 w-24 flex flex-col items-end opacity-90 z-10 pointer-events-none">
                 <span className="text-[10px] text-slate-500 font-bold mb-1 bg-white/80 px-1 rounded shadow-sm">My Guile</span>
-                <div className="flex flex-wrap gap-1 justify-end content-start pointer-events-auto">
-                  {myGuile.length > 0 ? myGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform"><Scroll size={12} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
+                <div className="flex flex-wrap gap-1 justify-end content-start pointer-events-auto max-h-24 overflow-y-auto">
+                  {myGuile.length > 0 ? myGuile.map((c, i) => (<div key={i} onClick={() => setViewingCard(c)} className="w-6 h-9 bg-purple-100 border border-purple-400 rounded flex items-center justify-center shadow-sm cursor-pointer hover:scale-110 transition-transform flex-shrink-0"><Scroll size={12} className="text-purple-700" /></div>)) : <div className="text-[10px] text-slate-400 bg-white/50 px-1 rounded">-</div>}
                 </div>
              </div>
 
