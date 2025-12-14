@@ -34,7 +34,9 @@ import {
   XCircle,
   MessageCircle,
   Send,
-  X
+  X,
+  Ban,         // 追加: 否認アイコン
+  ArrowRight   // 追加: ターン終了アイコン
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -162,7 +164,8 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
   );
 };
 
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
+// Update: onDeny追加
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   
   let statusColor = "bg-gray-200 border-gray-300";
@@ -237,13 +240,23 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCan
                 <XCircle size={12} />
               </button>
             ) : (
-              <button 
-                onClick={(e) => { e.stopPropagation(); onConcede(index); }}
-                className="bg-green-500 border border-green-600 rounded-full p-1 shadow-sm hover:bg-green-600 text-white animate-pulse"
-                title="相手の勝利を認める"
-              >
-                <CheckCircle2 size={12} />
-              </button>
+              // 相手が請求中: 承認 or 否認
+              <>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onConcede(index); }}
+                  className="bg-green-500 border border-green-600 rounded-full p-1 shadow-sm hover:bg-green-600 text-white animate-pulse"
+                  title="認める"
+                >
+                  <CheckCircle2 size={12} />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onDeny(index); }}
+                  className="bg-white border border-slate-300 rounded-full p-1 shadow-sm hover:bg-slate-100 text-slate-500"
+                  title="否認する"
+                >
+                  <Ban size={12} />
+                </button>
+              </>
             )}
           </div>
         )}
@@ -274,7 +287,6 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const flagsContainerRef = useRef(null);
 
-  // Chat State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -345,8 +357,6 @@ export default function App() {
       if (snap.exists()) {
         const data = snap.data();
         setGame(data);
-        
-        // Chat Unread Logic
         const msgs = data.chat || [];
         if (isChatOpen) {
           lastReadCountRef.current = msgs.length;
@@ -389,6 +399,7 @@ export default function App() {
       host: user.uid,
       guest: null,
       turn: 'host',
+      hasPlayedCard: false, // 追加: カードを出したか
       winner: null,
       deck: newDeck,
       hostHand,
@@ -441,6 +452,7 @@ export default function App() {
     const isHost = user.uid === game.host;
     if (user.uid !== game.host && user.uid !== game.guest) return;
     if (game.turn !== (isHost ? 'host' : 'guest')) return;
+    if (game.hasPlayedCard) return; // 既にカードを出していたらプレイ不可
 
     const newFlags = [...game.flags];
     const flag = { ...newFlags[flagIndex] };
@@ -454,6 +466,7 @@ export default function App() {
     hand.splice(selectedCardIdx, 1);
     flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
+    // Check simple full resolution
     if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
       const hostScore = evaluateFormation(flag.hostCards);
       const guestScore = evaluateFormation(flag.guestCards);
@@ -479,11 +492,36 @@ export default function App() {
       flags: newFlags,
       [myHandKey]: hand,
       deck: deck,
-      turn: isHost ? 'guest' : 'host',
-      winner: checkWinner(newFlags) || null,
-      lastMove: serverTimestamp()
+      hasPlayedCard: true, // カードプレイ済みにする（ターンはまだ変えない）
+      winner: checkWinner(newFlags) || null
+      // lastMoveはターン終了時に更新
     });
     setSelectedCardIdx(null);
+  };
+
+  const endTurn = async () => {
+    if (!game || !user) return;
+    const isHost = user.uid === game.host;
+    if (game.turn !== (isHost ? 'host' : 'guest')) return;
+    if (!game.hasPlayedCard) return; // カードを出すまで終了不可
+
+    const myRole = isHost ? 'host' : 'guest';
+    
+    // 自動否認ロジック: 自分が請求したまま残っているフラッグを取り消す
+    const newFlags = game.flags.map(flag => {
+      if (flag.proofClaim && flag.proofClaim.claimant === myRole) {
+        return { ...flag, proofClaim: null };
+      }
+      return flag;
+    });
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, {
+      flags: newFlags,
+      turn: isHost ? 'guest' : 'host',
+      hasPlayedCard: false,
+      lastMove: serverTimestamp()
+    });
   };
 
   // --- Proof & Chat Actions ---
@@ -504,6 +542,15 @@ export default function App() {
 
   const cancelClaim = async (flagIndex) => {
     if (!game || !user) return;
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const denyFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    // 否認（取り消しと同じ処理だが、相手のアクション）
     const newFlags = [...game.flags];
     newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
@@ -531,22 +578,13 @@ export default function App() {
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!chatMessage.trim() || !user || !game) return;
-
     const isHost = user.uid === game.host;
     const isGuest = user.uid === game.guest;
     if (!isHost && !isGuest) return; 
-
     const role = isHost ? 'host' : 'guest';
-    const msg = {
-      sender: role,
-      text: chatMessage.trim(),
-      timestamp: Date.now()
-    };
-
+    const msg = { sender: role, text: chatMessage.trim(), timestamp: Date.now() };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, {
-      chat: arrayUnion(msg)
-    });
+    await updateDoc(gameRef, { chat: arrayUnion(msg) });
     setChatMessage("");
   };
 
@@ -554,7 +592,6 @@ export default function App() {
 
   if (!user) return <div className="h-[100dvh] flex items-center justify-center bg-slate-50">Loading...</div>;
 
-  // Lobby
   if (!game) {
     return (
       <div className="min-h-[100dvh] bg-slate-100 flex flex-col items-center justify-center p-4 overscroll-none select-none">
@@ -624,7 +661,6 @@ export default function App() {
            </div>
         ) : (
           <div className="flex items-center gap-2">
-             {/* Chat Toggle Button */}
              <button 
                 onClick={() => setIsChatOpen(!isChatOpen)}
                 className="relative p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 mr-2"
@@ -634,7 +670,6 @@ export default function App() {
                    <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border border-white"></span>
                 )}
              </button>
-
              <div className="flex items-center gap-2 sm:gap-4 bg-slate-100 px-3 py-1 rounded-full text-xs sm:text-sm">
                <div className={`flex items-center gap-1 ${game.turn === 'host' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>
                   <Users size={14} /> <span className="hidden xs:inline">Host</span>
@@ -657,7 +692,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Chat Overlay with fixed click propagation */}
       {isChatOpen && (
         <div 
           className="absolute inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/20"
@@ -738,7 +772,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Waiting State */}
         {!game.guest && (
           <div className="absolute top-4 z-40 w-full flex justify-center">
             <div className="bg-blue-50 border border-blue-200 px-4 py-2 rounded-full flex items-center gap-2 animate-pulse shadow-lg mx-4 text-center">
@@ -748,7 +781,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Opponent Area */}
         <div className="w-full flex justify-center py-2 bg-slate-100/50 flex-shrink-0 min-h-[60px] sm:min-h-[80px]">
            <div className="flex gap-1 overflow-x-auto px-4 no-scrollbar items-end h-full">
              {opponentHand && opponentHand.map((_, i) => (
@@ -757,7 +789,6 @@ export default function App() {
            </div>
         </div>
 
-        {/* Board Area */}
         <div 
            ref={flagsContainerRef}
            className="w-full flex-1 overflow-x-auto overflow-y-hidden snap-x snap-mandatory flex items-center py-2 sm:py-4 px-4 sm:px-0 no-scrollbar touch-pan-x"
@@ -772,6 +803,7 @@ export default function App() {
                 onPlayToFlag={playCard}
                 onClaim={claimFlag}
                 onConcede={concedeFlag}
+                onDeny={denyFlag} // Added
                 onCancelClaim={cancelClaim}
                 canPlay={isMyTurn && selectedCardIdx !== null}
                 isSpectator={isSpectator}
@@ -781,7 +813,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Player Area */}
         <div className="w-full bg-white border-t border-slate-200 p-2 pb-2 sm:p-4 z-10 flex-shrink-0">
           <div className="relative w-full max-w-4xl mx-auto">
              {isMyTurn && (
@@ -790,6 +821,18 @@ export default function App() {
                 </div>
              )}
              
+             {/* Turn End Button */}
+             {isMyTurn && game.hasPlayedCard && (
+               <div className="absolute -top-14 right-4 z-20">
+                 <button 
+                   onClick={endTurn}
+                   className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-lg flex items-center gap-2 animate-bounce"
+                 >
+                   End Turn <ArrowRight size={16} />
+                 </button>
+               </div>
+             )}
+
              <div className="flex gap-2 sm:gap-3 overflow-x-auto px-2 py-2 sm:justify-center snap-x items-end min-h-[100px] sm:min-h-[120px] touch-pan-x">
                {myHand && myHand.map((card, i) => (
                  <div key={card.id} className="snap-center">
@@ -797,7 +840,7 @@ export default function App() {
                       card={card} 
                       onClick={() => !isSpectator && isMyTurn && setSelectedCardIdx(selectedCardIdx === i ? null : i)}
                       selected={selectedCardIdx === i}
-                      className={`shadow-md bg-white ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
+                      className={`shadow-md bg-white ${isSpectator ? 'cursor-default' : 'cursor-pointer'} ${!isMyTurn || game.hasPlayedCard ? 'opacity-50' : ''}`}
                     />
                  </div>
                ))}
