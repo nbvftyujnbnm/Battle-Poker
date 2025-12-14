@@ -14,7 +14,8 @@ import {
   onSnapshot, 
   updateDoc, 
   arrayUnion,
-  serverTimestamp
+  serverTimestamp,
+  initializeFirestore // 追加: 設定付き初期化のため
 } from 'firebase/firestore';
 import { 
   Shield, 
@@ -56,7 +57,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// 【修正箇所】Codespaces等での接続エラー（Load failed / transport errored）を回避するため、
+// WebSocketではなくLong Pollingを強制的に使用する設定で初期化します。
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
 
 const appId = 'battle-line-prod';
 
@@ -83,12 +89,21 @@ const createDeck = () => {
 
 const createTacticsDeck = () => {
   const tactics = [
-    { id: 't-morale-1', type: 'tactics', subType: 'morale', name: 'Alexander', description: '任意の数字・色として扱えるワイルドカード' },
-    { id: 't-env-1', type: 'tactics', subType: 'environment', name: 'Fog', description: 'このフラッグは役が無効になり、合計値勝負になる' },
-    { id: 't-guile-1', type: 'tactics', subType: 'guile', name: 'Traitor', description: '相手のカードを1枚奪って自分の場に出す' },
-    { id: 't-morale-2', type: 'tactics', subType: 'morale', name: 'Darius', description: '任意の数字・色として扱える' },
-    { id: 't-env-2', type: 'tactics', subType: 'environment', name: 'Mud', description: 'このフラッグは4枚目のカードを出せるようになる' },
-    { id: 't-guile-2', type: 'tactics', subType: 'guile', name: 'Scout', description: '山札を3枚見て並べ替える' },
+    // 士気高揚 (Morale)
+    { id: 't-leader-1', type: 'tactics', subType: 'morale', name: 'Alexander', description: '【リーダー】ワイルドカード（色・数を自由に指定）。1人1枚まで。' },
+    { id: 't-leader-2', type: 'tactics', subType: 'morale', name: 'Darius', description: '【リーダー】ワイルドカード（色・数を自由に指定）。1人1枚まで。' },
+    { id: 't-cavalry', type: 'tactics', subType: 'morale', name: 'Companion Cavalry', description: '【援軍騎兵】好きな色の「8」として使用。' },
+    { id: 't-shield', type: 'tactics', subType: 'morale', name: 'Shield Bearers', description: '【盾】好きな色の「1, 2, 3」のいずれかとして使用。' },
+    
+    // 気象 (Environment)
+    { id: 't-fog', type: 'tactics', subType: 'environment', name: 'Fog', description: '【霧】このフラッグは役が無効になり、合計値勝負になる。' },
+    { id: 't-mud', type: 'tactics', subType: 'environment', name: 'Mud', description: '【泥濘】このフラッグは4枚のカードでフォーメーションを作る。' },
+    
+    // 謀略 (Guile)
+    { id: 't-scout', type: 'tactics', subType: 'guile', name: 'Scout', description: '【偵察】山札から3枚引き、2枚を戻す。（未実装）' },
+    { id: 't-redeploy', type: 'tactics', subType: 'guile', name: 'Redeploy', description: '【配置転換】自分のカードを移動または破棄。（未実装）' },
+    { id: 't-deserter', type: 'tactics', subType: 'guile', name: 'Deserter', description: '【脱走】相手のカードを破棄。（未実装）' },
+    { id: 't-traitor', type: 'tactics', subType: 'guile', name: 'Traitor', description: '【裏切り】相手のカードを奪う。（未実装）' },
   ];
   for (let i = tactics.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -97,25 +112,91 @@ const createTacticsDeck = () => {
   return tactics;
 };
 
-const evaluateFormation = (cards) => {
-  if (cards.length !== 3) return { tier: 0, sum: 0 };
-  const numberCards = cards.filter(c => c.type === 'number' || !c.type);
-  if (numberCards.length !== 3) return { tier: 0, sum: 0 };
+// --- Formation Logic ---
 
-  const sorted = [...numberCards].sort((a, b) => a.value - b.value);
+const calculateRawScore = (cards) => {
+  const sorted = [...cards].sort((a, b) => a.value - b.value);
   const values = sorted.map(c => c.value);
   const colors = sorted.map(c => c.color);
   const sum = values.reduce((a, b) => a + b, 0);
+  const len = cards.length;
 
   const isFlush = colors.every(c => c === colors[0]);
-  const isStraight = (values[1] === values[0] + 1) && (values[2] === values[1] + 1);
-  const isThreeOfAKind = values[0] === values[1] && values[1] === values[2];
+  let isStraight = true;
+  for (let i = 0; i < len - 1; i++) {
+    if (values[i + 1] !== values[i] + 1) isStraight = false;
+  }
+  const isNOfAKind = values.every(v => v === values[0]);
 
-  if (isFlush && isStraight) return { tier: 5, sum };
-  if (isThreeOfAKind) return { tier: 4, sum };
-  if (isFlush) return { tier: 3, sum };
-  if (isStraight) return { tier: 2, sum };
-  return { tier: 1, sum };
+  let tier = 1;
+  if (isStraight && isFlush) tier = 5;
+  else if (isNOfAKind) tier = 4;
+  else if (isFlush) tier = 3;
+  else if (isStraight) tier = 2;
+
+  return { tier, sum };
+};
+
+const resolveBestFormation = (currentCards, index, isFog) => {
+  if (index === currentCards.length) {
+    const score = calculateRawScore(currentCards);
+    if (isFog) {
+      return { tier: 0, sum: score.sum };
+    }
+    return score;
+  }
+
+  const card = currentCards[index];
+
+  if (!card.type || card.type === 'number') {
+    return resolveBestFormation(currentCards, index + 1, isFog);
+  }
+
+  let bestResult = { tier: -1, sum: -1 };
+  let possibilities = [];
+
+  if (card.name === 'Alexander' || card.name === 'Darius') {
+    COLORS.forEach(c => {
+      VALUES.forEach(v => possibilities.push({ color: c, value: v }));
+    });
+  }
+  else if (card.name === 'Companion Cavalry') {
+    COLORS.forEach(c => possibilities.push({ color: c, value: 8 }));
+  }
+  else if (card.name === 'Shield Bearers') {
+    COLORS.forEach(c => {
+      [1, 2, 3].forEach(v => possibilities.push({ color: c, value: v }));
+    });
+  } else {
+    possibilities.push({ color: 'gray', value: 0 });
+  }
+
+  for (const p of possibilities) {
+    const nextCards = [...currentCards];
+    nextCards[index] = { ...card, ...p, isResolved: true };
+    
+    const res = resolveBestFormation(nextCards, index + 1, isFog);
+    
+    if (res.tier > bestResult.tier) {
+      bestResult = res;
+    } else if (res.tier === bestResult.tier) {
+      if (res.sum > bestResult.sum) {
+        bestResult = res;
+      }
+    }
+  }
+  
+  return bestResult;
+};
+
+const evaluateFormation = (cards, environment) => {
+  const isMud = environment?.name === 'Mud';
+  const isFog = environment?.name === 'Fog';
+  const requiredCount = isMud ? 4 : 3;
+
+  if (cards.length !== requiredCount) return { tier: 0, sum: 0 };
+
+  return resolveBestFormation(cards, 0, isFog);
 };
 
 const checkWinner = (flags) => {
@@ -229,6 +310,11 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const isMyClaim = hasClaim === myRole;
   
   const showActions = !isSpectator && !data.owner;
+  
+  const isMud = data.environment?.name === 'Mud';
+  const maxSlots = isMud ? 4 : 3;
+  const hostFull = data.hostCards.length >= maxSlots;
+  const guestFull = data.guestCards.length >= maxSlots;
 
   return (
     <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
@@ -245,7 +331,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       ) : null}
 
       <div className="flex flex-col gap-1">
-        {[0, 1, 2].map(i => (
+        {Array.from({ length: maxSlots }).map((_, i) => (
           <div key={`opp-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
              {isHost ? (
                 data.guestCards[i] ? <Card card={data.guestCards[i]} /> : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-top" />
@@ -258,12 +344,12 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
 
       <div className="relative z-10">
         <button 
-          disabled={!canPlay || data.owner || (isHost ? data.hostCards.length >= 3 : data.guestCards.length >= 3)}
+          disabled={!canPlay || data.owner || (isHost ? hostFull : guestFull)}
           onClick={() => onPlayToFlag(index)}
           className={`
             w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
             ${statusColor}
-            ${canPlay && !data.owner && (isHost ? data.hostCards.length < 3 : data.guestCards.length < 3) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
+            ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
             ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
           `}
         >
@@ -319,7 +405,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
       </div>
 
       <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
-        {[0, 1, 2].map(i => (
+        {Array.from({ length: maxSlots }).map((_, i) => (
           <div key={`my-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
              {isHost ? (
                 data.hostCards[i] ? <Card card={data.hostCards[i]} /> : <div className="w-12 h-16 sm:w-16 sm:h-24 border border-dashed border-gray-300 rounded opacity-50 scale-75 origin-bottom" />
@@ -352,7 +438,6 @@ export default function App() {
   const lastReadCountRef = useRef(0);
 
   // --- CRITICAL FIX: Unregister Service Worker ---
-  // PWAのService WorkerがFirestoreの通信を阻害するのを防ぐため、強制解除する
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
@@ -554,13 +639,26 @@ export default function App() {
        updateData[myGuileKey] = arrayUnion(cardToPlay);
     }
     else {
-       if (flag.owner || flag[myCardsKey].length >= 3) return;
+       const isMud = flag.environment?.name === 'Mud';
+       const maxSlots = isMud ? 4 : 3;
+
+       if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
+         const alreadyUsedLeader = game.flags.some(f => 
+           f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius')
+         );
+         if (alreadyUsedLeader) {
+           return; 
+         }
+       }
+
+       if (flag.owner || flag[myCardsKey].length >= maxSlots) return;
+       
        hand.splice(selectedCardIdx, 1);
        flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
-       if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
-         const hostScore = evaluateFormation(flag.hostCards);
-         const guestScore = evaluateFormation(flag.guestCards);
+       if (flag.hostCards.length === maxSlots && flag.guestCards.length === maxSlots) {
+         const hostScore = evaluateFormation(flag.hostCards, flag.environment);
+         const guestScore = evaluateFormation(flag.guestCards, flag.environment);
          
          let winner = null;
          if (hostScore.tier > guestScore.tier) winner = 'host';
@@ -623,7 +721,6 @@ export default function App() {
     }
     updateData[myHandKey] = hand;
 
-    // 自動否認
     const newFlags = game.flags.map(flag => {
       if (flag.proofClaim && flag.proofClaim.claimant === myRole) {
         return { ...flag, proofClaim: null };
@@ -634,7 +731,6 @@ export default function App() {
     updateData.flags = newFlags;
     updateData.turn = isHost ? 'guest' : 'host';
     updateData.hasPlayedCard = false;
-    // 確実に勝利判定を行う
     updateData.winner = checkWinner(newFlags) || null; 
     updateData.lastMove = serverTimestamp();
 
@@ -689,7 +785,6 @@ export default function App() {
       proofClaim: null
     };
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    // 承認時も確実に勝利判定を行う
     await updateDoc(gameRef, { 
       flags: newFlags,
       winner: checkWinner(newFlags) || null
@@ -708,8 +803,6 @@ export default function App() {
     await updateDoc(gameRef, { chat: arrayUnion(msg) });
     setChatMessage("");
   };
-
-  // --- Renders ---
 
   if (!user) return <div className="h-[100dvh] flex items-center justify-center bg-slate-50">Loading...</div>;
 
@@ -820,7 +913,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Chat Overlay */}
       {isChatOpen && (
         <div 
           className="absolute inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/20"
