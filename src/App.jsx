@@ -9,7 +9,7 @@ import {
   getFirestore, 
   collection, 
   doc, 
-  getDoc, // 追加: 参加前に空き状況を確認するため
+  getDoc,
   setDoc, 
   onSnapshot, 
   updateDoc, 
@@ -27,7 +27,10 @@ import {
   AlertCircle,
   Download,
   Share2,
-  Eye // 追加: 観戦アイコン
+  Eye,
+  Gavel,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -44,7 +47,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// データベースのパス構造を維持するための固定ID
 const appId = 'battle-line-prod';
 
 // --- Game Constants ---
@@ -156,7 +158,8 @@ const Card = ({ card, hidden, onClick, selected, className = "" }) => {
   );
 };
 
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, pendingCard, canPlay }) => {
+// FlagSpot: isMyTurn を受け取り、証明ボタンの表示を制御
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onCancelClaim, canPlay, isSpectator, isMyTurn }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   
   // Resolve visuals
@@ -171,8 +174,16 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, pendingCard, canPlay }) =
     Icon = !isHost ? Trophy : AlertCircle;
   }
 
+  // --- Proof System Logic ---
+  const myRole = isHost ? 'host' : 'guest';
+  const hasClaim = data.proofClaim && data.proofClaim.claimant;
+  const isMyClaim = hasClaim === myRole;
+  
+  // 観戦者にはボタンを表示しない
+  const showActions = !isSpectator && !data.owner;
+
   return (
-    <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1">
+    <div className="flex flex-col items-center gap-1 sm:gap-2 snap-center flex-shrink-0 px-1 relative">
       {/* Opponent Slots (Top) */}
       <div className="flex flex-col gap-1">
         {[0, 1, 2].map(i => (
@@ -187,24 +198,66 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, pendingCard, canPlay }) =
       </div>
 
       {/* The Flag Marker */}
-      <button 
-        disabled={!canPlay || data.owner || (isHost ? data.hostCards.length >= 3 : data.guestCards.length >= 3)}
-        onClick={() => onPlayToFlag(index)}
-        className={`
-          w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner z-10 transition-all flex-shrink-0 touch-manipulation
-          ${statusColor}
-          ${canPlay && !data.owner && (isHost ? data.hostCards.length < 3 : data.guestCards.length < 3) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
-        `}
-      >
-        {data.owner ? (
-           <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} />
-        ) : (
-           <span className="text-gray-400 text-xs font-bold">{index + 1}</span>
+      <div className="relative z-10">
+        <button 
+          disabled={!canPlay || data.owner || (isHost ? data.hostCards.length >= 3 : data.guestCards.length >= 3)}
+          onClick={() => onPlayToFlag(index)}
+          className={`
+            w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
+            ${statusColor}
+            ${canPlay && !data.owner && (isHost ? data.hostCards.length < 3 : data.guestCards.length < 3) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
+            ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
+          `}
+        >
+          {data.owner ? (
+             <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} />
+          ) : hasClaim ? (
+             <Gavel className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+          ) : (
+             <span className="text-gray-400 text-xs font-bold">{index + 1}</span>
+          )}
+        </button>
+
+        {/* Proof Action Buttons */}
+        {showActions && (
+          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1 z-20">
+            {!hasClaim ? (
+              // 誰も請求していない場合 -> 「証明」ボタン
+              // 【修正】自分のターンの場合のみ表示
+              isMyTurn && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onClaim(index); }}
+                  className="bg-white border border-slate-300 rounded-full p-1 shadow-sm hover:bg-slate-50 text-slate-500"
+                  title="勝利を証明する"
+                >
+                  <Gavel size={12} />
+                </button>
+              )
+            ) : isMyClaim ? (
+              // 自分が請求中 -> 「取り消し」ボタン
+              <button 
+                onClick={(e) => { e.stopPropagation(); onCancelClaim(index); }}
+                className="bg-white border border-red-200 rounded-full p-1 shadow-sm hover:bg-red-50 text-red-500"
+                title="証明を取り消す"
+              >
+                <XCircle size={12} />
+              </button>
+            ) : (
+              // 相手が請求中 -> 「認める」ボタン
+              <button 
+                onClick={(e) => { e.stopPropagation(); onConcede(index); }}
+                className="bg-green-500 border border-green-600 rounded-full p-1 shadow-sm hover:bg-green-600 text-white animate-pulse"
+                title="相手の勝利を認める"
+              >
+                <CheckCircle2 size={12} />
+              </button>
+            )}
+          </div>
         )}
-      </button>
+      </div>
 
       {/* Player Slots (Bottom) */}
-      <div className="flex flex-col-reverse gap-1">
+      <div className="flex flex-col-reverse gap-1 mt-6 sm:mt-8">
         {[0, 1, 2].map(i => (
           <div key={`my-${i}`} className="w-12 h-8 sm:w-16 sm:h-12 flex justify-center">
              {isHost ? (
@@ -272,7 +325,7 @@ export default function App() {
     }
   };
 
-  // --- Auth & Listener ---
+  // --- Auth ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -309,7 +362,7 @@ export default function App() {
     const guestHand = newDeck.splice(0, HAND_SIZE);
 
     const initialFlags = Array(FLAGS_COUNT).fill(null).map(() => ({
-      hostCards: [], guestCards: [], owner: null, completedAt: null 
+      hostCards: [], guestCards: [], owner: null, completedAt: null, proofClaim: null 
     }));
 
     const newGameId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -344,7 +397,6 @@ export default function App() {
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', code);
     
     try {
-      // 1. まずゲームデータを取得して空き状況を確認
       const gameSnap = await getDoc(gameRef);
       if (!gameSnap.exists()) {
         setError("ゲームが見つかりません。");
@@ -353,17 +405,11 @@ export default function App() {
       }
 
       const gameData = gameSnap.data();
-      
-      // 2. ゲストが空いているか、自分がすでに参加者かチェック
       if (!gameData.guest) {
-        // 空席あり：ゲストとして参加
         await updateDoc(gameRef, { guest: user.uid });
       } else if (gameData.guest !== user.uid && gameData.host !== user.uid) {
-        // 満席かつ自分は部外者：観戦モードとしてIDのみセット（書き込みなし）
         console.log("観戦モードで参加します");
       }
-      // すでに入っている場合はそのままIDセット
-
       setGameId(code);
     } catch (e) {
         console.error(e);
@@ -375,9 +421,7 @@ export default function App() {
   const playCard = async (flagIndex) => {
     if (!game || !user || selectedCardIdx === null) return;
     const isHost = user.uid === game.host;
-    // 部外者は操作不可
     if (user.uid !== game.host && user.uid !== game.guest) return;
-
     if (game.turn !== (isHost ? 'host' : 'guest')) return;
 
     const newFlags = [...game.flags];
@@ -392,6 +436,7 @@ export default function App() {
     hand.splice(selectedCardIdx, 1);
     flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
 
+    // Check simple full resolution
     if (flag.hostCards.length === 3 && flag.guestCards.length === 3) {
       const hostScore = evaluateFormation(flag.hostCards);
       const guestScore = evaluateFormation(flag.guestCards);
@@ -405,6 +450,7 @@ export default function App() {
         else winner = isHost ? 'guest' : 'host';
       }
       flag.owner = winner;
+      flag.proofClaim = null; // Clear claim if resolved naturally
     }
 
     newFlags[flagIndex] = flag;
@@ -421,6 +467,62 @@ export default function App() {
       lastMove: serverTimestamp()
     });
     setSelectedCardIdx(null);
+  };
+
+  // --- Proof System Actions ---
+
+  const claimFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    const isHost = user.uid === game.host;
+    const myRole = isHost ? 'host' : 'guest';
+    
+    // 【修正】ターンチェックを追加
+    if (game.turn !== myRole) return;
+
+    // 請求情報をセット
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = {
+      ...newFlags[flagIndex],
+      proofClaim: { claimant: myRole, timestamp: Date.now() }
+    };
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const cancelClaim = async (flagIndex) => {
+    if (!game || !user) return;
+    // 請求情報をクリア
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = {
+      ...newFlags[flagIndex],
+      proofClaim: null
+    };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const concedeFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    
+    const flag = game.flags[flagIndex];
+    if (!flag.proofClaim) return;
+    
+    const winnerRole = flag.proofClaim.claimant; // 'host' or 'guest'
+    
+    // 承認処理
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = {
+      ...newFlags[flagIndex],
+      owner: winnerRole,
+      proofClaim: null
+    };
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { 
+      flags: newFlags,
+      winner: checkWinner(newFlags) || null
+    });
   };
 
   // --- Renders ---
@@ -482,14 +584,10 @@ export default function App() {
   const isHost = user.uid === game.host;
   const isGuest = user.uid === game.guest;
   const isSpectator = !isHost && !isGuest;
-  
-  // 観戦者はホスト視点で表示（ただし操作不能）
   const viewAsHost = isHost || isSpectator;
   
   const myHand = viewAsHost ? game.hostHand : game.guestHand;
   const opponentHand = viewAsHost ? game.guestHand : game.hostHand;
-  
-  // 部外者はターンがない
   const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
   
   return (
@@ -582,7 +680,12 @@ export default function App() {
                 data={flag} 
                 isHost={viewAsHost} 
                 onPlayToFlag={playCard}
+                onClaim={claimFlag}
+                onConcede={concedeFlag}
+                onCancelClaim={cancelClaim}
                 canPlay={isMyTurn && selectedCardIdx !== null}
+                isSpectator={isSpectator}
+                isMyTurn={isMyTurn} // 修正: FlagSpotにターン情報を渡す
               />
             ))}
           </div>
