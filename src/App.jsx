@@ -46,7 +46,8 @@ import {
   Trash2,
   Reply,
   Move,
-  HelpCircle // 追加: ヘルプアイコン
+  HelpCircle,
+  ArrowDownWideNarrow // 追加: ソートアイコン
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -255,7 +256,6 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot: Added onZoom handler
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -374,7 +374,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   );
 };
 
-// --- New Help Modal Component ---
 const HelpModal = ({ onClose }) => {
   const [tab, setTab] = useState('rules');
   const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
@@ -446,15 +445,16 @@ export default function App() {
   const flagsContainerRef = useRef(null);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [isHelpOpen, setIsHelpOpen] = useState(false); // 追加: ヘルプ
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
-  const [viewingCard, setViewingCard] = useState(null); // 拡大表示用
+  const [viewingCard, setViewingCard] = useState(null);
   
   const [interactionMode, setInteractionMode] = useState(null);
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
   const [scoutReturnCount, setScoutReturnCount] = useState(0);
   const [selectedBoardCard, setSelectedBoardCard] = useState(null);
+  const [sortState, setSortState] = useState(0); // 0: Value, 1: Color
   
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
@@ -710,6 +710,34 @@ export default function App() {
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
     setSelectedCardIdx(null);
+  };
+
+  const handleSortHand = async () => {
+    if (!game || !user) return;
+    const isHost = user.uid === game.host;
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
+    const hand = [...game[myHandKey]];
+    
+    const nextSortState = (sortState + 1) % 2;
+
+    hand.sort((a, b) => {
+      // Tactics last
+      if (a.type === 'tactics' && b.type !== 'tactics') return 1;
+      if (a.type !== 'tactics' && b.type === 'tactics') return -1;
+      if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
+
+      if (nextSortState === 0) { // Value -> Color
+        if (a.value !== b.value) return a.value - b.value;
+        return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
+      } else { // Color -> Value
+        if (a.color !== b.color) return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
+        return a.value - b.value;
+      }
+    });
+
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { [myHandKey]: hand });
+    setSortState(nextSortState);
   };
 
   const handleScoutDraw = async (deckType) => {
@@ -1242,6 +1270,17 @@ export default function App() {
 
              {isMyTurn && !interactionMode && <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm animate-bounce z-20 whitespace-nowrap pointer-events-none">YOUR TURN</div>}
 
+             {/* Sort Button (Left Side) */}
+             <div className="absolute -top-10 left-2 z-20 pointer-events-auto">
+               <button 
+                 onClick={handleSortHand}
+                 className="bg-white border border-slate-300 text-slate-600 p-2 rounded-full shadow-lg hover:bg-slate-50 active:scale-95 transition-all"
+                 title="Sort Hand"
+               >
+                 <ArrowDownWideNarrow size={18} />
+               </button>
+             </div>
+
              {selectedDetails && !interactionMode && (
                <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white p-3 rounded-lg shadow-lg w-64 z-30 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
                  <h4 className="font-bold text-yellow-400 flex items-center justify-center gap-2">{selectedDetails.name}</h4>
@@ -1277,10 +1316,10 @@ export default function App() {
                       onClick={() => {
                         if (interactionMode === 'scout_return') handleScoutReturn(i);
                         else if (!isSpectator && isMyTurn && !interactionMode && !game.hasPlayedCard) setSelectedCardIdx(selectedCardIdx === i ? null : i);
-                        else if (!interactionMode) setViewingCard(card); // 自分の手札も拡大確認可能に
+                        else if (!interactionMode) setViewingCard(card);
                       }}
                       selected={selectedCardIdx === i}
-                      disabled={!isMyTurn && !interactionMode && !isSpectator} // 観戦者以外は自分のターン外でも拡大のみ可能にするため条件緩和
+                      disabled={!isMyTurn && !interactionMode && !isSpectator}
                       className={`shadow-md bg-white ${isSpectator ? 'cursor-default' : 'cursor-pointer'} ${!isMyTurn || (game.hasPlayedCard && !interactionMode) ? 'opacity-50' : ''} ${interactionMode === 'scout_return' ? 'ring-2 ring-purple-500 animate-pulse' : ''}`}
                     />
                     {interactionMode === 'scout_return' && <div className="absolute -top-2 -right-2 bg-purple-600 text-white rounded-full p-1 shadow-sm z-20 pointer-events-none"><Reply size={12}/></div>}
