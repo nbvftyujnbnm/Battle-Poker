@@ -47,7 +47,7 @@ import {
   Reply,
   Move,
   HelpCircle,
-  ArrowDownWideNarrow // 追加: ソートアイコン
+  ArrowDownWideNarrow
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -206,6 +206,26 @@ const checkWinner = (flags) => {
   if (hostCount >= 5) return 'host';
   if (guestCount >= 5) return 'guest';
   return null;
+};
+
+// --- Tactics Count Helper ---
+const calculateTacticsCount = (game) => {
+  let hostCount = (game.hostGuile || []).length;
+  let guestCount = (game.guestGuile || []).length;
+
+  game.flags.forEach(flag => {
+    // Count Morale cards on board
+    flag.hostCards.forEach(c => { if(c.type === 'tactics') hostCount++; });
+    flag.guestCards.forEach(c => { if(c.type === 'tactics') guestCount++; });
+    
+    // Count Environment cards
+    if (flag.environment) {
+      if (flag.environment.playedBy === 'host') hostCount++;
+      else if (flag.environment.playedBy === 'guest') guestCount++;
+    }
+  });
+
+  return { hostCount, guestCount };
 };
 
 // --- Components ---
@@ -404,8 +424,8 @@ const HelpModal = ({ onClose }) => {
                 <li><span className="font-bold text-blue-600">ホスト (Host)</span>: 役なし (合計値勝負)</li>
               </ul>
               
-              <h3 className="font-bold text-lg mt-4">証明 (Claim)</h3>
-              <p>自分のターン開始時に、まだ埋まりきっていないフラッグでも、相手がどうカードを出しても勝てないことが確定している場合、そのフラッグの獲得を証明（請求）できます。</p>
+              <h3 className="font-bold text-lg mt-4">戦術カード制限</h3>
+              <p>戦術カードは、自分がプレイした枚数が相手より1枚多い状態（先行している状態）では、新たに使用できません。</p>
             </>
           ) : (
             <div className="space-y-3">
@@ -454,7 +474,7 @@ export default function App() {
   const [scoutDrawCount, setScoutDrawCount] = useState(0);
   const [scoutReturnCount, setScoutReturnCount] = useState(0);
   const [selectedBoardCard, setSelectedBoardCard] = useState(null);
-  const [sortState, setSortState] = useState(0); // 0: Value, 1: Color
+  const [sortState, setSortState] = useState(0); 
   
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
@@ -616,6 +636,18 @@ export default function App() {
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
     
+    // Tactics Play Limit Check
+    if (cardToPlay.type === 'tactics') {
+      const { hostCount, guestCount } = calculateTacticsCount(game);
+      const myCount = isHost ? hostCount : guestCount;
+      const oppCount = isHost ? guestCount : hostCount;
+      // Rule: Cannot play tactic if you have played more than opponent
+      if (myCount > oppCount) {
+        setError("Cannot play Tactics (Limit exceeded!)");
+        return;
+      }
+    }
+
     let updateData = {};
 
     const hasValidTarget = (targetIsMine) => {
@@ -664,7 +696,8 @@ export default function App() {
 
     if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'environment') {
        if (flag.environment) return;
-       flag.environment = cardToPlay;
+       // Add 'playedBy' to track tactics count
+       flag.environment = { ...cardToPlay, playedBy: isHost ? 'host' : 'guest' };
        hand.splice(selectedCardIdx, 1);
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
@@ -1338,5 +1371,3 @@ export default function App() {
     </div>
   );
 }
-
-
