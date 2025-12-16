@@ -226,9 +226,8 @@ const calculateTacticsCount = (game) => {
 
 // --- Components ---
 
-const Card = ({ card, hidden, onClick, selected, disabled, isLastPlayed, className = "" }) => {
+const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => {
   if (!card) return <div className={`w-12 h-16 sm:w-16 sm:h-24 border-2 border-dashed border-gray-300 rounded-lg flex-shrink-0 ${className}`}></div>;
-  
   if (hidden) {
     const isTactics = card.type === 'tactics';
     const bgClass = isTactics ? 'bg-orange-900 border-orange-700' : 'bg-slate-700 border-slate-600';
@@ -240,8 +239,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, isLastPlayed, classNa
     );
   }
 
-  // Highlight style for the last played card
-  const highlightClass = isLastPlayed ? 'ring-2 ring-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.6)] z-10' : '';
+  // Highlight for the last played card
+  const highlightClass = card.isLastPlayed ? 'ring-2 ring-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.6)] z-10' : '';
 
   if (card.type === 'tactics') {
     let typeColor = "bg-slate-200 border-slate-400 text-slate-700";
@@ -295,7 +294,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const guestFull = data.guestCards.length >= maxSlots;
   const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
-  // Check if environment card was the last played
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
 
   return (
@@ -311,11 +309,11 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
           const cardSide = isHost ? 'guest' : 'host';
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
           const isOpponentCard = true;
-          const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard;
-          const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard;
+          // Guard: Cannot interact if owner is determined
+          const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard && !data.owner;
+          const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard && !data.owner;
           const canInteract = canTraitor || canDeserter;
           
-          // Check for Last Played Card
           const isLast = lastPlacedCard && lastPlacedCard.type !== 'environment' && lastPlacedCard.flagIndex === index && lastPlacedCard.side === cardSide && lastPlacedCard.cardIndex === i;
 
           return (
@@ -323,8 +321,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
                {card ? (
                  <div className="relative">
                    <Card 
-                     card={card} 
-                     isLastPlayed={isLast}
+                     card={{...card, isLastPlayed: isLast}} // Inject isLastPlayed prop
                      onClick={() => {
                         if (canInteract && onCardClick) onCardClick(index, i, isHost ? 'guest' : 'host');
                         else if (!interactionMode && onZoom) onZoom(card);
@@ -387,8 +384,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
                {card ? (
                  <div className="relative">
                    <Card 
-                     card={card} 
-                     isLastPlayed={isLast}
+                     card={{...card, isLastPlayed: isLast}} 
                      onClick={() => {
                         if (canRedeploy && onCardClick) onCardClick(index, i, isHost ? 'host' : 'guest');
                         else if (!interactionMode && onZoom) onZoom(card);
@@ -543,7 +539,7 @@ export default function App() {
       guestGuile: [],
       flags: initialFlags,
       chat: [], 
-      lastPlacedCard: null, // Init lastPlacedCard
+      lastPlacedCard: null, 
       createdAt: serverTimestamp(),
       lastMove: serverTimestamp()
     };
@@ -589,7 +585,6 @@ export default function App() {
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
     
-    // Tactics Play Limit Check
     if (cardToPlay.type === 'tactics') {
       const { hostCount, guestCount } = calculateTacticsCount(game);
       const myCount = isHost ? hostCount : guestCount;
@@ -619,7 +614,7 @@ export default function App() {
       updateData[myHandKey] = hand;
       updateData[myGuileKey] = arrayUnion(cardToPlay);
       updateData.hasPlayedCard = true;
-      updateData.lastPlacedCard = null; // Scout hides
+      updateData.lastPlacedCard = null; 
       const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
       await updateDoc(gameRef, updateData);
       setInteractionMode('scout_draw');
@@ -654,7 +649,7 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
-       updateData.lastPlacedCard = { flagIndex, type: 'environment' }; // Env Highlighting
+       updateData.lastPlacedCard = { flagIndex, type: 'environment' }; 
     }
     else if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'guile') {
        hand.splice(selectedCardIdx, 1);
@@ -689,7 +684,6 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
-       // Set Last Placed Card
        updateData.lastPlacedCard = {
          flagIndex: flagIndex,
          side: isHost ? 'host' : 'guest',
@@ -785,6 +779,12 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
     
+    // Guard: Cannot interact if owner is determined
+    if (game.flags[flagIndex].owner) {
+      setError("Cannot target cards on claimed flags.");
+      return;
+    }
+
     if (interactionMode === 'select_deserter_target') {
       const targetIsGuest = side === 'guest';
       if (isHost === !targetIsGuest) return; 
@@ -881,6 +881,7 @@ export default function App() {
       const newFlags = [...game.flags];
       const isSameFlag = selectedBoardCard.flagIndex === flagIndex;
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
+      // If moving to same flag (swapping ownership effectively), we operate on same flag obj
       const targetFlag = isSameFlag ? sourceFlag : { ...newFlags[flagIndex] };
       
       const isMud = targetFlag.environment?.name === 'Mud';
