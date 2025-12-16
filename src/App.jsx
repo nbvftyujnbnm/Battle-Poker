@@ -226,8 +226,9 @@ const calculateTacticsCount = (game) => {
 
 // --- Components ---
 
-const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => {
+const Card = ({ card, hidden, onClick, selected, disabled, isLastPlayed, className = "" }) => {
   if (!card) return <div className={`w-12 h-16 sm:w-16 sm:h-24 border-2 border-dashed border-gray-300 rounded-lg flex-shrink-0 ${className}`}></div>;
+  
   if (hidden) {
     const isTactics = card.type === 'tactics';
     const bgClass = isTactics ? 'bg-orange-900 border-orange-700' : 'bg-slate-700 border-slate-600';
@@ -239,6 +240,9 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
     );
   }
 
+  // Highlight style for the last played card
+  const highlightClass = isLastPlayed ? 'ring-2 ring-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.6)] z-10' : '';
+
   if (card.type === 'tactics') {
     let typeColor = "bg-slate-200 border-slate-400 text-slate-700";
     let TypeIcon = Zap;
@@ -247,7 +251,7 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
     if (card.subType === 'morale') { typeColor = "bg-orange-100 border-orange-400 text-orange-700"; TypeIcon = Zap; }
 
     return (
-      <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${typeColor} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
+      <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${typeColor} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${highlightClass} ${className}`}>
         <TypeIcon size={20} />
         <span className="text-[9px] sm:text-xs font-bold text-center leading-tight mt-0.5 line-clamp-2">{card.name}</span>
       </div>
@@ -264,7 +268,7 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   };
 
   return (
-    <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-between p-0.5 sm:p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${colorMap[card.color]} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${className}`}>
+    <div onClick={!disabled ? onClick : undefined} className={`relative w-10 h-14 sm:w-16 sm:h-24 rounded-lg border-2 shadow-sm flex flex-col items-center justify-between p-0.5 sm:p-1 cursor-pointer transition-all duration-200 flex-shrink-0 select-none ${colorMap[card.color]} ${selected ? 'ring-4 ring-slate-800 -translate-y-4 z-10' : !disabled ? 'active:scale-95' : 'opacity-50 cursor-not-allowed'} ${highlightClass} ${className}`}>
       <span className="text-[10px] sm:text-sm font-bold self-start leading-none">{card.value}</span>
       <div className={`w-2.5 h-2.5 sm:w-4 sm:h-4 rounded-full opacity-50 bg-current`} />
       <span className="text-[10px] sm:text-sm font-bold self-end leading-none rotate-180">{card.value}</span>
@@ -272,8 +276,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot Update: Allow environment placement even if slots are full
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, isEnvironmentSelected }) => {
+// FlagSpot: Receives lastPlacedCard
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
   let Icon = Shield;
@@ -289,41 +293,30 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  const slotLimitReached = isHost ? hostFull : guestFull;
   const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
-  // Helper for Interaction Targeting
-  const isTargetMode = interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action';
-  const isTargetable = isTargetMode && !data.owner && !slotLimitReached;
-
-  // Placement Logic Check
-  const canPlaceEnvironment = isEnvironmentSelected && !data.environment;
-  const canPlaceUnit = !isEnvironmentSelected && !slotLimitReached;
-  
-  // Final disabled check
-  // Enabled if:
-  // 1. Standard Play: My turn, card selected, no mode AND (can place env OR can place unit)
-  // 2. Interaction Target: In target mode AND is valid target
-  const isDisabled = 
-    (!canPlay && !isTargetable) || 
-    data.owner ||
-    (!interactionMode && !(canPlaceEnvironment || canPlaceUnit) && !isTargetable);
+  // Check if environment card was the last played
+  const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
 
   return (
     <div className="flex flex-col items-center gap-0.5 sm:gap-2 snap-center flex-shrink-0 px-0.5 relative">
       {data.environment ? (
-         <button onClick={(e) => { e.stopPropagation(); onEnvironmentClick(data.environment); }} className="absolute -top-6 bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded-full text-[9px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10 hover:bg-emerald-200 active:scale-95">
+         <button onClick={(e) => { e.stopPropagation(); onEnvironmentClick(data.environment); }} className={`absolute -top-6 bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded-full text-[9px] flex items-center gap-1 whitespace-nowrap shadow-sm z-10 hover:bg-emerald-200 active:scale-95 ${isLastEnv ? 'ring-2 ring-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.8)]' : ''}`}>
            <Cloud size={10} /> <span className="max-w-[50px] truncate">{data.environment.name}</span><Info size={8} className="opacity-50"/>
          </button>
       ) : null}
 
       <div className="flex flex-col gap-0.5">
         {Array.from({ length: maxSlots }).map((_, i) => {
+          const cardSide = isHost ? 'guest' : 'host';
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
           const isOpponentCard = true;
           const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard;
           const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard;
           const canInteract = canTraitor || canDeserter;
+          
+          // Check for Last Played Card
+          const isLast = lastPlacedCard && lastPlacedCard.type !== 'environment' && lastPlacedCard.flagIndex === index && lastPlacedCard.side === cardSide && lastPlacedCard.cardIndex === i;
 
           return (
             <div key={`opp-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
@@ -331,6 +324,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
                  <div className="relative">
                    <Card 
                      card={card} 
+                     isLastPlayed={isLast}
                      onClick={() => {
                         if (canInteract && onCardClick) onCardClick(index, i, isHost ? 'guest' : 'host');
                         else if (!interactionMode && onZoom) onZoom(card);
@@ -347,17 +341,17 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
 
       <div className="relative z-10 my-1">
         <button 
-          disabled={isDisabled}
+          disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !(interactionMode === 'select_traitor_target' && !data.owner && (isHost ? !hostFull : !guestFull)) && !(interactionMode === 'redeploy_action' && !data.owner && (isHost ? !hostFull : !guestFull))}
           onClick={() => {
-            if (isTargetable && onFlagClick) onFlagClick(index);
+            if ((interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && onFlagClick) onFlagClick(index);
             else onPlayToFlag(index);
           }}
           className={`
             w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 sm:border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
             ${statusColor}
-            ${!isDisabled && !hasClaim && !data.owner ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
+            ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
             ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
-            ${isTargetable ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
+            ${(interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !data.owner && (isHost ? !hostFull : !guestFull) ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
           `}
         >
           {data.owner ? <Icon className={`w-4 h-4 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
@@ -383,15 +377,18 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
 
       <div className="flex flex-col-reverse gap-0.5">
         {Array.from({ length: maxSlots }).map((_, i) => {
+          const cardSide = isHost ? 'host' : 'guest';
           const card = isHost ? data.hostCards[i] : data.guestCards[i];
           const canRedeploy = interactionMode === 'select_redeploy_source' && card && !data.owner;
-          
+          const isLast = lastPlacedCard && lastPlacedCard.type !== 'environment' && lastPlacedCard.flagIndex === index && lastPlacedCard.side === cardSide && lastPlacedCard.cardIndex === i;
+
           return (
             <div key={`my-${i}`} className="w-10 h-6 sm:w-16 sm:h-12 flex justify-center">
                {card ? (
                  <div className="relative">
                    <Card 
                      card={card} 
+                     isLastPlayed={isLast}
                      onClick={() => {
                         if (canRedeploy && onCardClick) onCardClick(index, i, isHost ? 'host' : 'guest');
                         else if (!interactionMode && onZoom) onZoom(card);
@@ -404,66 +401,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-};
-
-const HelpModal = ({ onClose }) => {
-  const [tab, setTab] = useState('rules');
-  const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
-    const x = acc.find(item => item.id === current.id || item.name === current.name);
-    if (!x) return acc.concat([current]);
-    return acc;
-  }, []), []);
-
-  return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-lg h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex border-b">
-          <button onClick={() => setTab('rules')} className={`flex-1 py-3 font-bold ${tab === 'rules' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`}>Rules</button>
-          <button onClick={() => setTab('tactics')} className={`flex-1 py-3 font-bold ${tab === 'tactics' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-slate-500'}`}>Tactics</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-slate-700">
-          {tab === 'rules' ? (
-            <>
-              <h3 className="font-bold text-lg">勝利条件</h3>
-              <p>9つのフラッグのうち、<span className="font-bold text-red-600">3つ連続</span>するか、<span className="font-bold text-red-600">合計5つ</span>を獲得したプレイヤーの勝利です。</p>
-              
-              <h3 className="font-bold text-lg mt-4">役の強さ</h3>
-              <ul className="list-decimal list-inside space-y-1 ml-2">
-                <li><span className="font-bold text-blue-600">ウェッジ (Wedge)</span>: 同色・連番 (最強)</li>
-                <li><span className="font-bold text-blue-600">ファランクス (Phalanx)</span>: 同数 (3 of a kind)</li>
-                <li><span className="font-bold text-blue-600">バタリオン (Battalion)</span>: 同色 (フラッシュ)</li>
-                <li><span className="font-bold text-blue-600">スカーミッシャー (Skirmish)</span>: 連番 (ストレート)</li>
-                <li><span className="font-bold text-blue-600">ホスト (Host)</span>: 役なし (合計値勝負)</li>
-              </ul>
-              
-              <h3 className="font-bold text-lg mt-4">戦術カード制限</h3>
-              <p>戦術カードは、自分がプレイした枚数が相手より1枚多い状態（先行している状態）では、新たに使用できません。</p>
-            </>
-          ) : (
-            <div className="space-y-3">
-              {tactics.map(card => (
-                <div key={card.name} className="border p-3 rounded-lg flex gap-3 items-start">
-                  <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
-                    card.subType === 'environment' ? 'bg-emerald-100 text-emerald-600' : 
-                    card.subType === 'guile' ? 'bg-purple-100 text-purple-600' : 
-                    'bg-orange-100 text-orange-600'
-                  }`}>
-                    {card.subType === 'environment' ? <Cloud size={16}/> : card.subType === 'guile' ? <Scroll size={16}/> : <Zap size={16}/>}
-                  </div>
-                  <div>
-                    <div className="font-bold">{card.name}</div>
-                    <div className="text-xs text-slate-500 mb-1 capitalize">{card.subType}</div>
-                    <div className="text-xs leading-relaxed">{card.description}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <button onClick={onClose} className="p-4 bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">Close</button>
       </div>
     </div>
   );
@@ -606,6 +543,7 @@ export default function App() {
       guestGuile: [],
       flags: initialFlags,
       chat: [], 
+      lastPlacedCard: null, // Init lastPlacedCard
       createdAt: serverTimestamp(),
       lastMove: serverTimestamp()
     };
@@ -681,6 +619,7 @@ export default function App() {
       updateData[myHandKey] = hand;
       updateData[myGuileKey] = arrayUnion(cardToPlay);
       updateData.hasPlayedCard = true;
+      updateData.lastPlacedCard = null; // Scout hides
       const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
       await updateDoc(gameRef, updateData);
       setInteractionMode('scout_draw');
@@ -715,11 +654,13 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
+       updateData.lastPlacedCard = { flagIndex, type: 'environment' }; // Env Highlighting
     }
     else if (cardToPlay.type === 'tactics' && cardToPlay.subType === 'guile') {
        hand.splice(selectedCardIdx, 1);
        updateData[myHandKey] = hand;
        updateData[myGuileKey] = arrayUnion(cardToPlay);
+       updateData.lastPlacedCard = null;
     }
     else {
        const isMud = flag.environment?.name === 'Mud';
@@ -748,6 +689,13 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
+       // Set Last Placed Card
+       updateData.lastPlacedCard = {
+         flagIndex: flagIndex,
+         side: isHost ? 'host' : 'guest',
+         cardIndex: flag[myCardsKey].length - 1,
+         type: 'troop'
+       };
     }
 
     updateData.hasPlayedCard = true;
@@ -767,6 +715,7 @@ export default function App() {
     const nextSortState = (sortState + 1) % 2;
 
     hand.sort((a, b) => {
+      // Tactics last
       if (a.type === 'tactics' && b.type !== 'tactics') return 1;
       if (a.type !== 'tactics' && b.type === 'tactics') return -1;
       if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
@@ -850,7 +799,15 @@ export default function App() {
       targetFlag[targetCardsKey] = targetCards;
       newFlags[flagIndex] = targetFlag;
       const logMsg = { sender: 'system', text: `Deserter removed ${removedCard.name || removedCard.color + ' ' + removedCard.value}.`, timestamp: Date.now() };
-      const updateData = { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), chat: arrayUnion(logMsg), hasPlayedCard: true, winner: checkWinner(newFlags) || null };
+      const updateData = { 
+        flags: newFlags, 
+        [myHandKey]: hand, 
+        [myGuileKey]: arrayUnion(playedCard), 
+        chat: arrayUnion(logMsg), 
+        hasPlayedCard: true, 
+        winner: checkWinner(newFlags) || null,
+        lastPlacedCard: null 
+      };
       const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
       await updateDoc(gameRef, updateData);
       setInteractionMode(null);
@@ -908,7 +865,13 @@ export default function App() {
         [myGuileKey]: arrayUnion(playedCard),
         hasPlayedCard: true,
         winner: checkWinner(newFlags) || null,
-        chat: arrayUnion({ sender: 'system', text: `Redeployed ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() })
+        chat: arrayUnion({ sender: 'system', text: `Redeployed ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }),
+        lastPlacedCard: {
+          flagIndex: flagIndex,
+          side: isHost ? 'host' : 'guest',
+          cardIndex: targetCards.length - 1,
+          type: 'troop'
+        }
       });
       setInteractionMode(null);
       setSelectedBoardCard(null);
@@ -957,7 +920,13 @@ export default function App() {
         [myGuileKey]: arrayUnion(playedCard),
         hasPlayedCard: true,
         winner: checkWinner(newFlags) || null,
-        chat: arrayUnion({ sender: 'system', text: `Traitor stole ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() })
+        chat: arrayUnion({ sender: 'system', text: `Traitor stole ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }),
+        lastPlacedCard: {
+          flagIndex: flagIndex,
+          side: isHost ? 'host' : 'guest',
+          cardIndex: targetCards.length - 1,
+          type: 'troop'
+        }
       });
       setInteractionMode(null);
       setSelectedBoardCard(null);
@@ -990,7 +959,8 @@ export default function App() {
       [myGuileKey]: arrayUnion(playedCard),
       hasPlayedCard: true,
       winner: checkWinner(newFlags) || null,
-      chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() })
+      chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }),
+      lastPlacedCard: null
     });
     setInteractionMode(null);
     setSelectedBoardCard(null);
@@ -1132,7 +1102,7 @@ export default function App() {
   const myGuile = viewAsHost ? (game.hostGuile || []) : (game.guestGuile || []);
   const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
   const selectedDetails = selectedCardIdx !== null && myHand[selectedCardIdx] && myHand[selectedCardIdx].type === 'tactics' ? myHand[selectedCardIdx] : null;
-  const isEnvironmentSelected = selectedDetails?.subType === 'environment';
+  const lastPlacedCard = game.lastPlacedCard;
 
   let interactionMsg = null;
   if (interactionMode === 'scout_draw') interactionMsg = `Draw ${3 - scoutDrawCount} more cards`;
@@ -1287,7 +1257,7 @@ export default function App() {
                 onZoom={setViewingCard}
                 canPlay={isMyTurn && selectedCardIdx !== null && !interactionMode}
                 isSpectator={isSpectator} isMyTurn={isMyTurn} interactionMode={interactionMode}
-                isEnvironmentSelected={isEnvironmentSelected} // Pass the environment check
+                lastPlacedCard={lastPlacedCard}
               />
             ))}
           </div>
