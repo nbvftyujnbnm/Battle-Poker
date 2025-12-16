@@ -47,7 +47,8 @@ import {
   Reply,
   Move,
   HelpCircle,
-  ArrowDownWideNarrow
+  ArrowDownWideNarrow,
+  History
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -275,7 +276,7 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot: Receives lastPlacedCard
+// FlagSpot
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -283,16 +284,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   if (data.owner === 'host') { statusColor = "bg-blue-100 border-blue-400"; Icon = isHost ? Trophy : AlertCircle; }
   else if (data.owner === 'guest') { statusColor = "bg-red-100 border-red-400"; Icon = !isHost ? Trophy : AlertCircle; }
 
-  const myRole = isHost ? 'host' : 'guest';
   const hasClaim = data.proofClaim && data.proofClaim.claimant;
-  const isMyClaim = hasClaim === myRole;
+  const isMyClaim = hasClaim === (isHost ? 'host' : 'guest');
   const showActions = !isSpectator && !data.owner && !interactionMode; 
   
   const isMud = data.environment?.name === 'Mud';
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
 
@@ -309,7 +308,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
           const cardSide = isHost ? 'guest' : 'host';
           const card = isHost ? data.guestCards[i] : data.hostCards[i];
           const isOpponentCard = true;
-          // Guard: Cannot interact if owner is determined
           const canTraitor = interactionMode === 'select_traitor_source' && card && isOpponentCard && !data.owner;
           const canDeserter = interactionMode === 'select_deserter_target' && card && isOpponentCard && !data.owner;
           const canInteract = canTraitor || canDeserter;
@@ -321,7 +319,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
                {card ? (
                  <div className="relative">
                    <Card 
-                     card={{...card, isLastPlayed: isLast}} // Inject isLastPlayed prop
+                     card={{...card, isLastPlayed: isLast}} 
                      onClick={() => {
                         if (canInteract && onCardClick) onCardClick(index, i, isHost ? 'guest' : 'host');
                         else if (!interactionMode && onZoom) onZoom(card);
@@ -402,6 +400,100 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   );
 };
 
+// Help & Removed Cards Modals are unchanged...
+const HelpModal = ({ onClose }) => {
+  const [tab, setTab] = useState('rules');
+  const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
+    const x = acc.find(item => item.id === current.id || item.name === current.name);
+    if (!x) return acc.concat([current]);
+    return acc;
+  }, []), []);
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex border-b">
+          <button onClick={() => setTab('rules')} className={`flex-1 py-3 font-bold ${tab === 'rules' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`}>Rules</button>
+          <button onClick={() => setTab('tactics')} className={`flex-1 py-3 font-bold ${tab === 'tactics' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-slate-500'}`}>Tactics</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm text-slate-700">
+          {tab === 'rules' ? (
+            <>
+              <h3 className="font-bold text-lg">勝利条件</h3>
+              <p>9つのフラッグのうち、<span className="font-bold text-red-600">3つ連続</span>するか、<span className="font-bold text-red-600">合計5つ</span>を獲得したプレイヤーの勝利です。</p>
+              
+              <h3 className="font-bold text-lg mt-4">役の強さ</h3>
+              <ul className="list-decimal list-inside space-y-1 ml-2">
+                <li><span className="font-bold text-blue-600">ウェッジ (Wedge)</span>: 同色・連番 (最強)</li>
+                <li><span className="font-bold text-blue-600">ファランクス (Phalanx)</span>: 同数 (3 of a kind)</li>
+                <li><span className="font-bold text-blue-600">バタリオン (Battalion)</span>: 同色 (フラッシュ)</li>
+                <li><span className="font-bold text-blue-600">スカーミッシャー (Skirmish)</span>: 連番 (ストレート)</li>
+                <li><span className="font-bold text-blue-600">ホスト (Host)</span>: 役なし (合計値勝負)</li>
+              </ul>
+              <h3 className="font-bold text-lg mt-4">戦術カード制限</h3>
+              <p>戦術カードは、自分がプレイした枚数が相手より1枚多い状態（先行している状態）では、新たに使用できません。</p>
+              <h3 className="font-bold text-lg mt-4">リーダーカード制限</h3>
+              <p>リーダーカード（Alexander, Darius）は、各プレイヤーにつきゲーム中1回のみ使用可能です。一度使用すると、盤面から除去されても2枚目は使用できません。</p>
+            </>
+          ) : (
+            <div className="space-y-3">
+              {tactics.map(card => (
+                <div key={card.name} className="border p-3 rounded-lg flex gap-3 items-start">
+                  <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
+                    card.subType === 'environment' ? 'bg-emerald-100 text-emerald-600' : 
+                    card.subType === 'guile' ? 'bg-purple-100 text-purple-600' : 
+                    'bg-orange-100 text-orange-600'
+                  }`}>
+                    {card.subType === 'environment' ? <Cloud size={16}/> : card.subType === 'guile' ? <Scroll size={16}/> : <Zap size={16}/>}
+                  </div>
+                  <div>
+                    <div className="font-bold">{card.name}</div>
+                    <div className="text-xs text-slate-500 mb-1 capitalize">{card.subType}</div>
+                    <div className="text-xs leading-relaxed">{card.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button onClick={onClose} className="p-4 bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">Close</button>
+      </div>
+    </div>
+  );
+};
+
+const RemovedCardsModal = ({ cards, onClose }) => {
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg h-[60vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+          <h3 className="font-bold text-lg text-slate-700 flex items-center gap-2">
+            <Trash2 size={20} /> Removed Cards
+          </h3>
+          <button onClick={onClose}><X size={20} className="text-slate-500" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-100">
+          {cards && cards.length > 0 ? (
+            <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
+              {cards.map((card, i) => (
+                <div key={i} className="flex justify-center">
+                   <Card card={card} className="scale-90 origin-top" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+              <Trash2 size={48} className="opacity-20" />
+              <p>No cards removed yet.</p>
+            </div>
+          )}
+        </div>
+        <button onClick={onClose} className="p-4 bg-white border-t text-slate-600 font-bold hover:bg-slate-50">Close</button>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [gameId, setGameId] = useState("");
@@ -414,6 +506,7 @@ export default function App() {
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isRemovedCardsOpen, setIsRemovedCardsOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [viewingCard, setViewingCard] = useState(null);
@@ -537,6 +630,9 @@ export default function App() {
       guestHand,
       hostGuile: [],
       guestGuile: [],
+      hostUsedLeader: false, // Added: Track if leader used
+      guestUsedLeader: false, // Added: Track if leader used
+      removedCards: [],
       flags: initialFlags,
       chat: [], 
       lastPlacedCard: null, 
@@ -581,10 +677,12 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
+    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader'; // Added key
     
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
     
+    // Tactics Play Limit Check
     if (cardToPlay.type === 'tactics') {
       const { hostCount, guestCount } = calculateTacticsCount(game);
       const myCount = isHost ? hostCount : guestCount;
@@ -660,11 +758,17 @@ export default function App() {
     else {
        const isMud = flag.environment?.name === 'Mud';
        const maxSlots = isMud ? 4 : 3;
+
+       // Corrected Leader Check: Use flag instead of board scan
        if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
-         const alreadyUsedLeader = game.flags.some(f => f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius'));
-         if (alreadyUsedLeader) return; 
+         if (game[myUsedLeaderKey]) {
+            setError("Leader card can only be used once per game!");
+            return;
+         }
        }
+       
        if (flag.owner || flag[myCardsKey].length >= maxSlots) return;
+       
        hand.splice(selectedCardIdx, 1);
        flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
        if (flag.hostCards.length === maxSlots && flag.guestCards.length === maxSlots) {
@@ -684,6 +788,12 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
+       
+       // Update Leader Usage Flag
+       if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
+         updateData[myUsedLeaderKey] = true;
+       }
+
        updateData.lastPlacedCard = {
          flagIndex: flagIndex,
          side: isHost ? 'host' : 'guest',
@@ -699,6 +809,8 @@ export default function App() {
     try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
     setSelectedCardIdx(null);
   };
+  
+  // ... rest of the component remains unchanged (handlers, render) ...
 
   const handleSortHand = async () => {
     if (!game || !user) return;
@@ -779,7 +891,6 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
     
-    // Guard: Cannot interact if owner is determined
     if (game.flags[flagIndex].owner) {
       setError("Cannot target cards on claimed flags.");
       return;
@@ -803,6 +914,7 @@ export default function App() {
         flags: newFlags, 
         [myHandKey]: hand, 
         [myGuileKey]: arrayUnion(playedCard), 
+        removedCards: arrayUnion(removedCard), 
         chat: arrayUnion(logMsg), 
         hasPlayedCard: true, 
         winner: checkWinner(newFlags) || null,
@@ -881,7 +993,6 @@ export default function App() {
       const newFlags = [...game.flags];
       const isSameFlag = selectedBoardCard.flagIndex === flagIndex;
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
-      // If moving to same flag (swapping ownership effectively), we operate on same flag obj
       const targetFlag = isSameFlag ? sourceFlag : { ...newFlags[flagIndex] };
       
       const isMud = targetFlag.environment?.name === 'Mud';
@@ -958,6 +1069,7 @@ export default function App() {
       flags: newFlags,
       [myHandKey]: hand,
       [myGuileKey]: arrayUnion(playedCard),
+      removedCards: arrayUnion(removedCard), // Add to removed
       hasPlayedCard: true,
       winner: checkWinner(newFlags) || null,
       chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }),
@@ -1137,9 +1249,12 @@ export default function App() {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* Help Button */}
+          {/* Help & History Buttons */}
           <button onClick={() => setIsHelpOpen(true)} className="p-2 rounded-full hover:bg-slate-100 text-slate-600">
             <HelpCircle size={20} />
+          </button>
+          <button onClick={() => setIsRemovedCardsOpen(true)} className="p-2 rounded-full hover:bg-slate-100 text-slate-600">
+            <History size={20} />
           </button>
 
           {isSpectator ? (
@@ -1164,8 +1279,9 @@ export default function App() {
         </div>
       </header>
 
-      {/* Help Modal */}
+      {/* Modals */}
       {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
+      {isRemovedCardsOpen && <RemovedCardsModal cards={game.removedCards} onClose={() => setIsRemovedCardsOpen(false)} />}
 
       {/* Chat Overlay */}
       {isChatOpen && (
