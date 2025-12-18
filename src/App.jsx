@@ -284,14 +284,16 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   if (data.owner === 'host') { statusColor = "bg-blue-100 border-blue-400"; Icon = isHost ? Trophy : AlertCircle; }
   else if (data.owner === 'guest') { statusColor = "bg-red-100 border-red-400"; Icon = !isHost ? Trophy : AlertCircle; }
 
+  const myRole = isHost ? 'host' : 'guest';
   const hasClaim = data.proofClaim && data.proofClaim.claimant;
-  const isMyClaim = hasClaim === (isHost ? 'host' : 'guest');
+  const isMyClaim = hasClaim === myRole;
   const showActions = !isSpectator && !data.owner && !interactionMode; 
   
   const isMud = data.environment?.name === 'Mud';
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
+  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
 
@@ -334,7 +336,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
         })}
       </div>
 
-      <div className="relative z-10 my-1">
+      <div className="relative z-30 my-1">
         <button 
           disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !(interactionMode === 'select_traitor_target' && !data.owner && (isHost ? !hostFull : !guestFull)) && !(interactionMode === 'redeploy_action' && !data.owner && (isHost ? !hostFull : !guestFull))}
           onClick={() => {
@@ -399,8 +401,10 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
     </div>
   );
 };
+// ... (Rest of the code remains exactly the same)
+// Added minimal ... around the rest to fit context.
+// Assuming the rest of the component (HelpModal, RemovedCardsModal, App) follows here without changes.
 
-// Help & Removed Cards Modals are unchanged...
 const HelpModal = ({ onClose }) => {
   const [tab, setTab] = useState('rules');
   const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
@@ -630,8 +634,8 @@ export default function App() {
       guestHand,
       hostGuile: [],
       guestGuile: [],
-      hostUsedLeader: false, // Added: Track if leader used
-      guestUsedLeader: false, // Added: Track if leader used
+      hostUsedLeader: false,
+      guestUsedLeader: false,
       removedCards: [],
       flags: initialFlags,
       chat: [], 
@@ -677,12 +681,11 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
-    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader'; // Added key
+    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader'; 
     
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
     
-    // Tactics Play Limit Check
     if (cardToPlay.type === 'tactics') {
       const { hostCount, guestCount } = calculateTacticsCount(game);
       const myCount = isHost ? hostCount : guestCount;
@@ -759,7 +762,6 @@ export default function App() {
        const isMud = flag.environment?.name === 'Mud';
        const maxSlots = isMud ? 4 : 3;
 
-       // Corrected Leader Check: Use flag instead of board scan
        if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
          if (game[myUsedLeaderKey]) {
             setError("Leader card can only be used once per game!");
@@ -789,7 +791,6 @@ export default function App() {
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
        
-       // Update Leader Usage Flag
        if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
          updateData[myUsedLeaderKey] = true;
        }
@@ -809,32 +810,25 @@ export default function App() {
     try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
     setSelectedCardIdx(null);
   };
-  
-  // ... rest of the component remains unchanged (handlers, render) ...
 
   const handleSortHand = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const hand = [...game[myHandKey]];
-    
     const nextSortState = (sortState + 1) % 2;
-
     hand.sort((a, b) => {
-      // Tactics last
       if (a.type === 'tactics' && b.type !== 'tactics') return 1;
       if (a.type !== 'tactics' && b.type === 'tactics') return -1;
       if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
-
-      if (nextSortState === 0) { // Value -> Color
+      if (nextSortState === 0) { 
         if (a.value !== b.value) return a.value - b.value;
         return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
-      } else { // Color -> Value
+      } else { 
         if (a.color !== b.color) return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
         return a.value - b.value;
       }
     });
-
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { [myHandKey]: hand });
     setSortState(nextSortState);
@@ -1069,7 +1063,7 @@ export default function App() {
       flags: newFlags,
       [myHandKey]: hand,
       [myGuileKey]: arrayUnion(playedCard),
-      removedCards: arrayUnion(removedCard), // Add to removed
+      removedCards: arrayUnion(removedCard),
       hasPlayedCard: true,
       winner: checkWinner(newFlags) || null,
       chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }),
@@ -1080,6 +1074,8 @@ export default function App() {
     setSelectedCardIdx(null);
   };
 
+  // ... (Rest of the functions: drawAndEndTurn, claimFlag, etc. are unchanged)
+  // Re-including drawAndEndTurn for context, though it's unchanged.
   const drawAndEndTurn = async (deckType) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
@@ -1472,5 +1468,3 @@ export default function App() {
     </div>
   );
 }
-
-
