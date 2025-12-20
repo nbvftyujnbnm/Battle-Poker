@@ -50,11 +50,25 @@ import {
   ArrowDownWideNarrow,
   History,
   SkipForward,
-  GitMerge // トーナメント表用
+  GitMerge
 } from 'lucide-react';
 
 // --- Firebase Init ---
-const firebaseConfig = JSON.parse(__firebase_config);
+const getFirebaseConfig = () => {
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+  return {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
+  };
+};
+
+const firebaseConfig = getFirebaseConfig();
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -270,7 +284,7 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot: Z-index fixed for actions
+// FlagSpot
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard, isEnvironmentSelected }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -498,12 +512,10 @@ const RemovedCardsModal = ({ cards, onClose }) => {
   );
 };
 
-// --- New: Tournament Bracket Component ---
+// --- Tournament Bracket Component ---
 const TournamentBracket = ({ tournament, onStartMatch, currentUserId }) => {
   if (!tournament) return null;
   
-  // 4 Player Single Elimination
-  // Matches: 1 (Semis), 2 (Semis), 3 (Finals)
   const m1 = tournament.matches.find(m => m.id === 1);
   const m2 = tournament.matches.find(m => m.id === 2);
   const m3 = tournament.matches.find(m => m.id === 3);
@@ -525,7 +537,6 @@ const TournamentBracket = ({ tournament, onStartMatch, currentUserId }) => {
       </h2>
 
       <div className="flex justify-between w-full gap-8">
-        {/* Semis Column */}
         <div className="flex flex-col justify-around gap-12 w-1/3">
           {[m1, m2].map((m, i) => (
             <div key={m.id} className="bg-white border rounded-lg shadow-sm p-3 relative">
@@ -548,12 +559,10 @@ const TournamentBracket = ({ tournament, onStartMatch, currentUserId }) => {
           ))}
         </div>
 
-        {/* Connector */}
         <div className="flex flex-col justify-center items-center w-10">
            <GitMerge className="text-slate-300 rotate-90" size={48} />
         </div>
 
-        {/* Finals Column */}
         <div className="flex flex-col justify-center w-1/3">
            <div className="bg-white border-2 border-yellow-400 rounded-lg shadow-md p-4 relative">
               <div className="text-xs text-yellow-600 mb-1 font-bold flex items-center gap-1"><Crown size={12}/> Finals</div>
@@ -593,9 +602,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [gameId, setGameId] = useState("");
   const [game, setGame] = useState(null);
-  const [tournamentId, setTournamentId] = useState(""); // State for tournament
-  const [tournament, setTournament] = useState(null);   // Data for tournament
-
+  const [tournamentId, setTournamentId] = useState("");
+  const [tournament, setTournament] = useState(null);
   const [selectedCardIdx, setSelectedCardIdx] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -618,19 +626,51 @@ export default function App() {
   const chatEndRef = useRef(null);
   const lastReadCountRef = useRef(0);
 
-  // ... (useEffect blocks are unchanged)
-  useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.getRegistrations().then((registrations) => { for (let registration of registrations) registration.unregister(); }); } }, []);
   useEffect(() => {
-    const metaTags = [{ name: 'apple-mobile-web-app-capable', content: 'yes' }, { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' }, { name: 'theme-color', content: '#f1f5f9' }, { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover' }];
-    metaTags.forEach(tag => { let el = document.querySelector(`meta[name="${tag.name}"]`); if (!el) { el = document.createElement('meta'); el.name = tag.name; document.head.appendChild(el); } el.content = tag.content; });
-    const handleContext = (e) => e.preventDefault(); document.addEventListener('contextmenu', handleContext);
-    const handleInstall = (e) => { e.preventDefault(); setInstallPrompt(e); }; window.addEventListener('beforeinstallprompt', handleInstall);
-    return () => { document.removeEventListener('contextmenu', handleContext); window.removeEventListener('beforeinstallprompt', handleInstall); };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (let registration of registrations) registration.unregister();
+      });
+    }
   }, []);
-  const triggerInstall = async () => { if (!installPrompt) return; installPrompt.prompt(); const { outcome } = await installPrompt.userChoice; if (outcome === 'accepted') setInstallPrompt(null); };
-  useEffect(() => { const initAuth = async () => { try { await signInAnonymously(auth); } catch (e) { console.error("Auth failed", e); } }; initAuth(); return onAuthStateChanged(auth, (u) => setUser(u)); }, []);
 
-  // --- Game Listener ---
+  useEffect(() => {
+    const metaTags = [
+      { name: 'apple-mobile-web-app-capable', content: 'yes' },
+      { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+      { name: 'theme-color', content: '#f1f5f9' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover' }
+    ];
+    metaTags.forEach(tag => {
+      let el = document.querySelector(`meta[name="${tag.name}"]`);
+      if (!el) { el = document.createElement('meta'); el.name = tag.name; document.head.appendChild(el); }
+      el.content = tag.content;
+    });
+    const handleContext = (e) => e.preventDefault();
+    document.addEventListener('contextmenu', handleContext);
+    const handleInstall = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handleInstall);
+    return () => {
+      document.removeEventListener('contextmenu', handleContext);
+      window.removeEventListener('beforeinstallprompt', handleInstall);
+    };
+  }, []);
+
+  const triggerInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') setInstallPrompt(null);
+  };
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try { await signInAnonymously(auth); } catch (e) { console.error("Auth failed", e); }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, (u) => setUser(u));
+  }, []);
+
   useEffect(() => {
     if (!gameId || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
@@ -638,16 +678,24 @@ export default function App() {
       if (snap.exists()) {
         const data = snap.data();
         setGame(data);
-        // ... (chat logic)
         const msgs = data.chat || [];
-        if (isChatOpen) { lastReadCountRef.current = msgs.length; setUnreadCount(0); } 
-        else { setUnreadCount(msgs.length - lastReadCountRef.current); }
-      } else { setError("Game not found."); }
-    }, (err) => { console.error("Snapshot Error:", err); setError("Connection lost. Please reload."); });
+        if (isChatOpen) {
+          lastReadCountRef.current = msgs.length;
+          setUnreadCount(0);
+        } else {
+          setUnreadCount(msgs.length - lastReadCountRef.current);
+        }
+      } else {
+        setError("Game not found.");
+      }
+    }, (err) => {
+        console.error("Snapshot Error:", err);
+        setError("Connection lost. Please reload.");
+    });
     return () => unsubscribe();
   }, [gameId, user, isChatOpen]);
 
-  // --- Tournament Listener ---
+  // Tournament Listener
   useEffect(() => {
     if (!tournamentId || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', tournamentId);
@@ -661,13 +709,11 @@ export default function App() {
     return () => unsubscribe();
   }, [tournamentId, user]);
 
-  // --- Game Winner Watcher for Tournament ---
+  // Game Winner Watcher for Tournament
   useEffect(() => {
     if (!game || !game.winner || !game.tournamentId) return;
-    // Only the winner executes the tournament update to avoid conflict (simple heuristic)
     if (game.winner === (user.uid === game.host ? 'host' : 'guest')) {
       const reportWin = async () => {
-         // Prevent double reporting if tournament is already updated (check handled in logic)
          const tourneyRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', game.tournamentId);
          const tourneySnap = await getDoc(tourneyRef);
          if (!tourneySnap.exists()) return;
@@ -676,15 +722,13 @@ export default function App() {
          const match = tData.matches.find(m => m.id === game.matchId);
          
          if (match && !match.winner) {
-            const winnerUid = user.uid; // Since we checked game.winner logic above
+            const winnerUid = user.uid;
             
-            // Update current match
             const newMatches = tData.matches.map(m => {
               if (m.id === game.matchId) return { ...m, winner: winnerUid };
               return m;
             });
 
-            // Advance to next match if exists
             if (match.nextMatchId) {
                const nextMatchIndex = newMatches.findIndex(m => m.id === match.nextMatchId);
                if (nextMatchIndex !== -1) {
@@ -700,13 +744,86 @@ export default function App() {
       };
       reportWin();
     }
-  }, [game]); // Depend on game state changes
+  }, [game]);
 
-  // ... (Other useEffects)
+  useEffect(() => {
+    if (!game || game.winner) return;
+    const actualWinner = checkWinner(game.flags);
+    if (actualWinner && !game.winner) {
+      const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+      updateDoc(gameRef, { winner: actualWinner }).catch(err => console.error("Auto-fix failed:", err));
+    }
+  }, [game]);
+
+  useEffect(() => {
+    if (isChatOpen && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [game?.chat, isChatOpen]);
+
+  // --- Helpers for Pass Logic ---
+  const checkHandPlayability = () => {
+    if (!game || !user) return true;
+    const isHost = user.uid === game.host;
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
+    const hand = game[myHandKey] || [];
+    
+    const { hostCount, guestCount } = calculateTacticsCount(game);
+    const myCount = isHost ? hostCount : guestCount;
+    const oppCount = isHost ? guestCount : hostCount;
+    const tacticsRestricted = myCount > oppCount;
+    
+    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader';
+    const leaderUsed = game[myUsedLeaderKey];
+
+    const hasValidTarget = (targetIsMine) => {
+       const targetKey = targetIsMine 
+         ? (isHost ? 'hostCards' : 'guestCards')
+         : (isHost ? 'guestCards' : 'hostCards');
+       return game.flags.some(f => !f.owner && f[targetKey].length > 0);
+    };
+
+    return hand.some(card => {
+      if (card.type === 'tactics') {
+        if (tacticsRestricted) return false;
+
+        if (card.subType === 'environment') {
+          return game.flags.some(f => !f.owner && !f.environment);
+        }
+        if (card.subType === 'guile') {
+          if (card.name === 'Scout') {
+             const deckCount = (game.deck.length + (game.tacticsDeck ? game.tacticsDeck.length : 0));
+             return deckCount > 0;
+          }
+          if (card.name === 'Deserter' || card.name === 'Traitor') return hasValidTarget(false);
+          if (card.name === 'Redeploy') return hasValidTarget(true);
+          return false;
+        }
+        if (card.subType === 'morale') {
+          if ((card.name === 'Alexander' || card.name === 'Darius') && leaderUsed) return false;
+          return game.flags.some(f => {
+            if (f.owner) return false;
+            const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
+            const currentSlots = isHost ? f.hostCards.length : f.guestCards.length;
+            return currentSlots < maxSlots;
+          });
+        }
+        return false;
+      }
+      
+      return game.flags.some(f => {
+        if (f.owner) return false;
+        const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
+        const currentSlots = isHost ? f.hostCards.length : f.guestCards.length;
+        return currentSlots < maxSlots;
+      });
+    });
+  };
+
+  const isPlayable = useMemo(() => checkHandPlayability(), [game, user]);
 
   // --- Actions ---
 
-  // Standard Game Creation (Wrapper)
   const createGame = async (customSettings = {}) => {
     if (!user) return;
     setLoading(true);
@@ -721,7 +838,7 @@ export default function App() {
     const gameData = {
       id: newGameId,
       host: user.uid,
-      guest: null, // Can be overridden
+      guest: null,
       turn: 'host',
       hasPlayedCard: false,
       winner: null,
@@ -739,11 +856,11 @@ export default function App() {
       lastPlacedCard: null, 
       createdAt: serverTimestamp(),
       lastMove: serverTimestamp(),
-      ...customSettings // Merge tournament settings (tournamentId, matchId, guest UID etc)
+      ...customSettings
     };
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'games', newGameId), gameData);
-      if (!customSettings.tournamentId) setGameId(newGameId); // Only auto-join if standard game
+      if (!customSettings.tournamentId) setGameId(newGameId);
       return newGameId;
     } catch (e) {
       setError("Could not create game.");
@@ -769,7 +886,6 @@ export default function App() {
     setLoading(false);
   };
 
-  // --- Tournament Actions ---
   const createTournament = async () => {
     if (!user) return;
     setLoading(true);
@@ -807,10 +923,8 @@ export default function App() {
        const newPlayers = [...tData.players, { uid: user.uid, name: `Player ${tData.players.length + 1}` }];
        let updates = { players: newPlayers };
        
-       // Start if full
        if (newPlayers.length === 4) {
           updates.status = 'active';
-          // Assign initial matches
           const matches = [...tData.matches];
           matches[0].p1 = newPlayers[0].uid;
           matches[0].p2 = newPlayers[1].uid;
@@ -829,10 +943,7 @@ export default function App() {
       setGameId(existingGameId);
       return;
     }
-    
-    // Create new game linked to tournament
     const match = tournament.matches.find(m => m.id === matchId);
-    // Only P1 creates the game to avoid dupes
     if (match.p1 === user.uid) {
        const newGId = await createGame({ 
          host: match.p1, 
@@ -841,19 +952,15 @@ export default function App() {
          matchId: match.id 
        });
        
-       // Update match with gameId
        const tRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', tournament.id);
        const newMatches = tournament.matches.map(m => m.id === matchId ? { ...m, gameId: newGId } : m);
        await updateDoc(tRef, { matches: newMatches });
        setGameId(newGId);
     } else {
-       // P2 waits for gameId to appear in snapshot
        setError("Waiting for host to start match...");
     }
   };
 
-  // ... (Card logic - playCard, etc. remains same)
-  // Re-pasting standard logic to ensure context...
   const playCard = async (flagIndex) => {
     if (!game || !user || selectedCardIdx === null) return;
     const isHost = user.uid === game.host;
@@ -884,13 +991,18 @@ export default function App() {
     let updateData = {};
 
     const hasValidTarget = (targetIsMine) => {
-       const targetKey = targetIsMine ? (isHost ? 'hostCards' : 'guestCards') : (isHost ? 'guestCards' : 'hostCards');
+       const targetKey = targetIsMine 
+         ? (isHost ? 'hostCards' : 'guestCards')
+         : (isHost ? 'guestCards' : 'hostCards');
        return game.flags.some(f => !f.owner && f[targetKey].length > 0);
     };
 
     if (cardToPlay.name === 'Scout') {
       const deckCount = (game.deck.length + (game.tacticsDeck ? game.tacticsDeck.length : 0));
-      if (deckCount === 0) { setError("No cards in decks!"); return; }
+      if (deckCount === 0) {
+        setError("No cards in decks!");
+        return;
+      }
       hand.splice(selectedCardIdx, 1);
       updateData[myHandKey] = hand;
       updateData[myGuileKey] = arrayUnion(cardToPlay);
@@ -904,16 +1016,19 @@ export default function App() {
       setSelectedCardIdx(null);
       return;
     }
+    
     if (cardToPlay.name === 'Deserter') {
       if (!hasValidTarget(false)) { setError("No valid target cards on board!"); return; }
       setInteractionMode('select_deserter_target');
       return; 
     }
+
     if (cardToPlay.name === 'Redeploy') {
       if (!hasValidTarget(true)) { setError("No valid cards to move!"); return; }
       setInteractionMode('select_redeploy_source');
       return;
     }
+
     if (cardToPlay.name === 'Traitor') {
       if (!hasValidTarget(false)) { setError("No valid target cards on board!"); return; }
       setInteractionMode('select_traitor_source');
@@ -938,10 +1053,16 @@ export default function App() {
     else {
        const isMud = flag.environment?.name === 'Mud';
        const maxSlots = isMud ? 4 : 3;
+
        if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
-         if (game[myUsedLeaderKey]) { setError("Leader card can only be used once per game!"); return; }
+         if (game[myUsedLeaderKey]) {
+            setError("Leader card can only be used once per game!");
+            return;
+         }
        }
+       
        if (flag.owner || flag[myCardsKey].length >= maxSlots) return;
+       
        hand.splice(selectedCardIdx, 1);
        flag[myCardsKey] = [...flag[myCardsKey], cardToPlay];
        if (flag.hostCards.length === maxSlots && flag.guestCards.length === maxSlots) {
@@ -961,39 +1082,56 @@ export default function App() {
        newFlags[flagIndex] = flag;
        updateData.flags = newFlags;
        updateData[myHandKey] = hand;
-       if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') updateData[myUsedLeaderKey] = true;
-       updateData.lastPlacedCard = { flagIndex: flagIndex, side: isHost ? 'host' : 'guest', cardIndex: flag[myCardsKey].length - 1, type: 'troop' };
+       
+       if (cardToPlay.name === 'Alexander' || cardToPlay.name === 'Darius') {
+         updateData[myUsedLeaderKey] = true;
+       }
+
+       updateData.lastPlacedCard = {
+         flagIndex: flagIndex,
+         side: isHost ? 'host' : 'guest',
+         cardIndex: flag[myCardsKey].length - 1,
+         type: 'troop'
+       };
     }
+
     updateData.hasPlayedCard = true;
     updateData.winner = checkWinner(newFlags) || null;
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
     setSelectedCardIdx(null);
   };
   
-  // (Helpers passTurn, handleSortHand, handleScoutDraw, handleScoutReturn, handleBoardCardClick, handleFlagInteractionClick, handleRedeployDiscard, drawAndEndTurn, claimFlag... etc remain unchanged)
-  // ... omitting unchanged helper implementations for brevity, they are exactly as in previous step ...
-  // [IMPORTANT]: In real file, ensure ALL helper functions (handleBoardCardClick etc) are included here. 
-  // Since I must output full file, I will include them.
-
   const passTurn = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     if (game.turn !== (isHost ? 'host' : 'guest')) return;
+    
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, { turn: isHost ? 'guest' : 'host', hasPlayedCard: false, lastMove: serverTimestamp(), lastPlacedCard: null, chat: arrayUnion({ sender: 'system', text: `${isHost ? 'Host' : 'Guest'} passed.`, timestamp: Date.now() }) });
+    await updateDoc(gameRef, {
+      turn: isHost ? 'guest' : 'host',
+      hasPlayedCard: false,
+      lastMove: serverTimestamp(),
+      lastPlacedCard: null, 
+      chat: arrayUnion({ sender: 'system', text: `${isHost ? 'Host' : 'Guest'} passed.`, timestamp: Date.now() })
+    });
     setInteractionMode(null);
   };
+  
   const handleSortHand = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const hand = [...game[myHandKey]];
+    
     const nextSortState = (sortState + 1) % 2;
+
     hand.sort((a, b) => {
       if (a.type === 'tactics' && b.type !== 'tactics') return 1;
       if (a.type !== 'tactics' && b.type === 'tactics') return -1;
       if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
+
       if (nextSortState === 0) {
         if (a.value !== b.value) return a.value - b.value;
         return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
@@ -1002,10 +1140,12 @@ export default function App() {
         return a.value - b.value;
       }
     });
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { [myHandKey]: hand });
     setSortState(nextSortState);
   };
+
   const handleScoutDraw = async (deckType) => {
     if (interactionMode !== 'scout_draw' || scoutDrawCount >= 3) return;
     let newDeck = deckType === 'normal' ? [...game.deck] : [...game.tacticsDeck];
@@ -1016,11 +1156,17 @@ export default function App() {
     const hand = [...game[myHandKey]];
     hand.push(drawn);
     const updateData = { [myHandKey]: hand };
-    if (deckType === 'normal') updateData.deck = newDeck; else updateData.tacticsDeck = newDeck;
+    if (deckType === 'normal') updateData.deck = newDeck;
+    else updateData.tacticsDeck = newDeck;
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, updateData);
-    setScoutDrawCount(prev => { const next = prev + 1; if (next >= 3) setInteractionMode('scout_return'); return next; });
+    setScoutDrawCount(prev => {
+      const next = prev + 1;
+      if (next >= 3) setInteractionMode('scout_return');
+      return next;
+    });
   };
+
   const handleScoutReturn = async (cardIndex) => {
     if (interactionMode !== 'scout_return' || scoutReturnCount >= 2) return;
     const isHost = user.uid === game.host;
@@ -1045,11 +1191,17 @@ export default function App() {
     await updateDoc(gameRef, updateData);
     setScoutReturnCount(nextCount);
   };
+
   const handleBoardCardClick = async (flagIndex, cardIndex, side) => {
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
-    if (game.flags[flagIndex].owner) { setError("Cannot target cards on claimed flags."); return; }
+    
+    if (game.flags[flagIndex].owner) {
+      setError("Cannot target cards on claimed flags.");
+      return;
+    }
+
     if (interactionMode === 'select_deserter_target') {
       const targetIsGuest = side === 'guest';
       if (isHost === !targetIsGuest) return; 
@@ -1064,97 +1216,176 @@ export default function App() {
       targetFlag[targetCardsKey] = targetCards;
       newFlags[flagIndex] = targetFlag;
       const logMsg = { sender: 'system', text: `Deserter removed ${removedCard.name || removedCard.color + ' ' + removedCard.value}.`, timestamp: Date.now() };
-      const updateData = { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), removedCards: arrayUnion(removedCard), chat: arrayUnion(logMsg), hasPlayedCard: true, winner: checkWinner(newFlags) || null, lastPlacedCard: null };
+      const updateData = { 
+        flags: newFlags, 
+        [myHandKey]: hand, 
+        [myGuileKey]: arrayUnion(playedCard), 
+        removedCards: arrayUnion(removedCard), 
+        chat: arrayUnion(logMsg), 
+        hasPlayedCard: true, 
+        winner: checkWinner(newFlags) || null,
+        lastPlacedCard: null 
+      };
       const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
       await updateDoc(gameRef, updateData);
-      setInteractionMode(null); setSelectedCardIdx(null);
-    } else if (interactionMode === 'select_redeploy_source') {
+      setInteractionMode(null);
+      setSelectedCardIdx(null);
+    }
+    else if (interactionMode === 'select_redeploy_source') {
       const targetIsHost = side === 'host';
       if (isHost !== targetIsHost) return;
-      setSelectedBoardCard({ flagIndex, cardIndex, side }); setInteractionMode('redeploy_action');
-    } else if (interactionMode === 'select_traitor_source') {
+      setSelectedBoardCard({ flagIndex, cardIndex, side });
+      setInteractionMode('redeploy_action');
+    }
+    else if (interactionMode === 'select_traitor_source') {
       const targetIsGuest = side === 'guest';
       if (isHost === !targetIsGuest) return;
-      setSelectedBoardCard({ flagIndex, cardIndex, side }); setInteractionMode('select_traitor_target');
+      setSelectedBoardCard({ flagIndex, cardIndex, side });
+      setInteractionMode('select_traitor_target');
     }
   };
+
   const handleFlagInteractionClick = async (flagIndex) => {
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+
     if (interactionMode === 'redeploy_action' && selectedBoardCard) {
       if (flagIndex === selectedBoardCard.flagIndex) return; 
       const newFlags = [...game.flags];
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
       const targetFlag = { ...newFlags[flagIndex] };
+      
       const isMud = targetFlag.environment?.name === 'Mud';
       const maxSlots = isMud ? 4 : 3;
       if (targetFlag[myCardsKey].length >= maxSlots) return;
+
       const sourceCards = [...sourceFlag[myCardsKey]];
       const cardToMove = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
       sourceFlag[myCardsKey] = sourceCards;
+      
       const targetCards = [...targetFlag[myCardsKey]];
       targetCards.push(cardToMove);
       targetFlag[myCardsKey] = targetCards;
+
       newFlags[selectedBoardCard.flagIndex] = sourceFlag;
       newFlags[flagIndex] = targetFlag;
+
       const hand = [...game[myHandKey]];
       const playedCard = hand[selectedCardIdx];
       hand.splice(selectedCardIdx, 1);
-      await updateDoc(gameRef, { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), hasPlayedCard: true, winner: checkWinner(newFlags) || null, chat: arrayUnion({ sender: 'system', text: `Redeployed ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }), lastPlacedCard: { flagIndex: flagIndex, side: isHost ? 'host' : 'guest', cardIndex: targetCards.length - 1, type: 'troop' } });
-      setInteractionMode(null); setSelectedBoardCard(null); setSelectedCardIdx(null);
-    } else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
+
+      await updateDoc(gameRef, {
+        flags: newFlags,
+        [myHandKey]: hand,
+        [myGuileKey]: arrayUnion(playedCard),
+        hasPlayedCard: true,
+        winner: checkWinner(newFlags) || null,
+        chat: arrayUnion({ sender: 'system', text: `Redeployed ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }),
+        lastPlacedCard: {
+          flagIndex: flagIndex,
+          side: isHost ? 'host' : 'guest',
+          cardIndex: targetCards.length - 1,
+          type: 'troop'
+        }
+      });
+      setInteractionMode(null);
+      setSelectedBoardCard(null);
+      setSelectedCardIdx(null);
+    }
+    else if (interactionMode === 'select_traitor_target' && selectedBoardCard) {
       const newFlags = [...game.flags];
       const isSameFlag = selectedBoardCard.flagIndex === flagIndex;
       const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
       const targetFlag = isSameFlag ? sourceFlag : { ...newFlags[flagIndex] };
+      
       const isMud = targetFlag.environment?.name === 'Mud';
       const maxSlots = isMud ? 4 : 3;
       if (targetFlag[myCardsKey].length >= maxSlots) return;
+
       const oppCardsKey = selectedBoardCard.side === 'host' ? 'hostCards' : 'guestCards';
       const sourceCards = [...sourceFlag[oppCardsKey]];
       const cardToMove = sourceCards[selectedBoardCard.cardIndex];
+
       if (cardToMove.name === 'Alexander' || cardToMove.name === 'Darius') {
-         const alreadyUsedLeader = game.flags.some(f => f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius'));
-         if (alreadyUsedLeader) return; 
+         const alreadyUsedLeader = game.flags.some(f => 
+           f[myCardsKey].some(c => c.name === 'Alexander' || c.name === 'Darius')
+         );
+         if (alreadyUsedLeader) {
+           return; 
+         }
       }
+
       sourceCards.splice(selectedBoardCard.cardIndex, 1);
       sourceFlag[oppCardsKey] = sourceCards;
+
       const targetCards = [...targetFlag[myCardsKey]];
       targetCards.push(cardToMove);
       targetFlag[myCardsKey] = targetCards;
+
       newFlags[selectedBoardCard.flagIndex] = sourceFlag;
       if (!isSameFlag) newFlags[flagIndex] = targetFlag;
+
       const hand = [...game[myHandKey]];
       const playedCard = hand[selectedCardIdx];
       hand.splice(selectedCardIdx, 1);
-      await updateDoc(gameRef, { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), hasPlayedCard: true, winner: checkWinner(newFlags) || null, chat: arrayUnion({ sender: 'system', text: `Traitor stole ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }), lastPlacedCard: { flagIndex: flagIndex, side: isHost ? 'host' : 'guest', cardIndex: targetCards.length - 1, type: 'troop' } });
-      setInteractionMode(null); setSelectedBoardCard(null); setSelectedCardIdx(null);
+
+      await updateDoc(gameRef, {
+        flags: newFlags,
+        [myHandKey]: hand,
+        [myGuileKey]: arrayUnion(playedCard),
+        hasPlayedCard: true,
+        winner: checkWinner(newFlags) || null,
+        chat: arrayUnion({ sender: 'system', text: `Traitor stole ${cardToMove.name || cardToMove.color} to Flag ${flagIndex + 1}`, timestamp: Date.now() }),
+        lastPlacedCard: {
+          flagIndex: flagIndex,
+          side: isHost ? 'host' : 'guest',
+          cardIndex: targetCards.length - 1,
+          type: 'troop'
+        }
+      });
+      setInteractionMode(null);
+      setSelectedBoardCard(null);
+      setSelectedCardIdx(null);
     }
   };
+
   const handleRedeployDiscard = async () => {
     if (interactionMode !== 'redeploy_action' || !selectedBoardCard) return;
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
+    const myCardsKey = isHost ? 'hostCards' : 'guestCards';
+    
     const newFlags = [...game.flags];
     const sourceFlag = { ...newFlags[selectedBoardCard.flagIndex] };
-    const sourceCards = [...sourceFlag[myCardsKey]]; // Fix: myCardsKey undefined here, re-define or use isHost check
-    // Fix context for myCardsKey
-    const myCardsKeyRef = isHost ? 'hostCards' : 'guestCards';
-    const sourceCardsRef = [...sourceFlag[myCardsKeyRef]];
-    const removedCard = sourceCardsRef.splice(selectedBoardCard.cardIndex, 1)[0];
-    sourceFlag[myCardsKeyRef] = sourceCardsRef;
+    const sourceCards = [...sourceFlag[myCardsKey]];
+    const removedCard = sourceCards.splice(selectedBoardCard.cardIndex, 1)[0];
+    sourceFlag[myCardsKey] = sourceCards;
     newFlags[selectedBoardCard.flagIndex] = sourceFlag;
+
     const hand = [...game[myHandKey]];
     const playedCard = hand[selectedCardIdx];
     hand.splice(selectedCardIdx, 1);
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    await updateDoc(gameRef, { flags: newFlags, [myHandKey]: hand, [myGuileKey]: arrayUnion(playedCard), removedCards: arrayUnion(removedCard), hasPlayedCard: true, winner: checkWinner(newFlags) || null, chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }), lastPlacedCard: null });
-    setInteractionMode(null); setSelectedBoardCard(null); setSelectedCardIdx(null);
+    await updateDoc(gameRef, {
+      flags: newFlags,
+      [myHandKey]: hand,
+      [myGuileKey]: arrayUnion(playedCard),
+      removedCards: arrayUnion(removedCard), // Add to removed
+      hasPlayedCard: true,
+      winner: checkWinner(newFlags) || null,
+      chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }),
+      lastPlacedCard: null
+    });
+    setInteractionMode(null);
+    setSelectedBoardCard(null);
+    setSelectedCardIdx(null);
   };
+
   const drawAndEndTurn = async (deckType) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
@@ -1163,24 +1394,96 @@ export default function App() {
     let newDeck = [];
     let drawnCard = null;
     let updateData = {};
-    if (deckType === 'normal') { newDeck = [...game.deck]; if (newDeck.length > 0) { drawnCard = newDeck.shift(); updateData.deck = newDeck; } } else if (deckType === 'tactics') { newDeck = [...game.tacticsDeck]; if (newDeck.length > 0) { drawnCard = newDeck.shift(); updateData.tacticsDeck = newDeck; } }
+    if (deckType === 'normal') {
+      newDeck = [...game.deck];
+      if (newDeck.length > 0) {
+        drawnCard = newDeck.shift();
+        updateData.deck = newDeck;
+      }
+    } else if (deckType === 'tactics') {
+      newDeck = [...game.tacticsDeck];
+      if (newDeck.length > 0) {
+        drawnCard = newDeck.shift();
+        updateData.tacticsDeck = newDeck;
+      }
+    }
     const hand = [...game[myHandKey]];
-    if (drawnCard) hand.push(drawnCard);
+    if (drawnCard) {
+      hand.push(drawnCard);
+    }
     updateData[myHandKey] = hand;
-    const newFlags = game.flags.map(flag => { if (flag.proofClaim && flag.proofClaim.claimant === myRole) { return { ...flag, proofClaim: null }; } return flag; });
+    const newFlags = game.flags.map(flag => {
+      if (flag.proofClaim && flag.proofClaim.claimant === myRole) {
+        return { ...flag, proofClaim: null };
+      }
+      return flag;
+    });
     updateData.flags = newFlags;
     updateData.turn = isHost ? 'guest' : 'host';
     updateData.hasPlayedCard = false;
     updateData.winner = checkWinner(newFlags) || null; 
     updateData.lastMove = serverTimestamp();
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-    try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
+    try {
+      await updateDoc(gameRef, updateData);
+    } catch (e) {
+      setError("通信エラーが発生しました。");
+    }
   };
-  const claimFlag = async (flagIndex) => { if (!game || !user) return; const isHost = user.uid === game.host; const myRole = isHost ? 'host' : 'guest'; if (game.turn !== myRole) return; const newFlags = [...game.flags]; newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: { claimant: myRole, timestamp: Date.now() } }; const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId); await updateDoc(gameRef, { flags: newFlags }); };
-  const cancelClaim = async (flagIndex) => { if (!game || !user) return; const newFlags = [...game.flags]; newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null }; const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId); await updateDoc(gameRef, { flags: newFlags }); };
-  const denyFlag = async (flagIndex) => { if (!game || !user) return; const newFlags = [...game.flags]; newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null }; const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId); await updateDoc(gameRef, { flags: newFlags }); };
-  const concedeFlag = async (flagIndex) => { if (!game || !user) return; const flag = game.flags[flagIndex]; if (!flag.proofClaim) return; const winnerRole = flag.proofClaim.claimant; const newFlags = [...game.flags]; newFlags[flagIndex] = { ...newFlags[flagIndex], owner: winnerRole, proofClaim: null }; const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId); await updateDoc(gameRef, { flags: newFlags, winner: checkWinner(newFlags) || null }); };
-  const sendMessage = async (e) => { e.preventDefault(); if (!chatMessage.trim() || !user || !game) return; const isHost = user.uid === game.host; const isGuest = user.uid === game.guest; if (!isHost && !isGuest) return; const role = isHost ? 'host' : 'guest'; const msg = { sender: role, text: chatMessage.trim(), timestamp: Date.now() }; const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId); await updateDoc(gameRef, { chat: arrayUnion(msg) }); setChatMessage(""); };
+
+  const claimFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    const isHost = user.uid === game.host;
+    const myRole = isHost ? 'host' : 'guest';
+    if (game.turn !== myRole) return;
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = {
+      ...newFlags[flagIndex],
+      proofClaim: { claimant: myRole, timestamp: Date.now() }
+    };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const cancelClaim = async (flagIndex) => {
+    if (!game || !user) return;
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const denyFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = { ...newFlags[flagIndex], proofClaim: null };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags });
+  };
+
+  const concedeFlag = async (flagIndex) => {
+    if (!game || !user) return;
+    const flag = game.flags[flagIndex];
+    if (!flag.proofClaim) return;
+    const winnerRole = flag.proofClaim.claimant;
+    const newFlags = [...game.flags];
+    newFlags[flagIndex] = { ...newFlags[flagIndex], owner: winnerRole, proofClaim: null };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { flags: newFlags, winner: checkWinner(newFlags) || null });
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!chatMessage.trim() || !user || !game) return;
+    const isHost = user.uid === game.host;
+    const isGuest = user.uid === game.guest;
+    if (!isHost && !isGuest) return; 
+    const role = isHost ? 'host' : 'guest';
+    const msg = { sender: role, text: chatMessage.trim(), timestamp: Date.now() };
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, { chat: arrayUnion(msg) });
+    setChatMessage("");
+  };
 
   if (!user) return <div className="h-[100dvh] flex items-center justify-center bg-slate-50">Loading...</div>;
 
