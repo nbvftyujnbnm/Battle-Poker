@@ -49,7 +49,7 @@ import {
   HelpCircle,
   ArrowDownWideNarrow,
   History,
-  SkipForward // 追加: パス用アイコン
+  SkipForward
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -276,6 +276,7 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
+// FlagSpot: Z-index fixed for actions
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard, isEnvironmentSelected }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -292,7 +293,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
   
@@ -363,7 +363,8 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
         </button>
 
         {showActions && (
-          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1 z-20">
+          // Fixed z-index to 50 to prevent overlap issues
+          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1 z-50">
             {!hasClaim ? (
               isMyTurn && <button onClick={(e) => { e.stopPropagation(); onClaim(index); }} className="bg-white border border-slate-300 rounded-full p-1 shadow-sm hover:bg-slate-50 text-slate-500"><Gavel size={12} /></button>
             ) : isMyClaim ? (
@@ -408,6 +409,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   );
 };
 
+// Help & Removed Cards Modals are unchanged...
 const HelpModal = ({ onClose }) => {
   const [tab, setTab] = useState('rules');
   const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
@@ -620,13 +622,11 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const hand = game[myHandKey] || [];
     
-    // 戦術カード制限チェック
     const { hostCount, guestCount } = calculateTacticsCount(game);
     const myCount = isHost ? hostCount : guestCount;
     const oppCount = isHost ? guestCount : hostCount;
     const tacticsRestricted = myCount > oppCount;
     
-    // リーダー使用済みチェック
     const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader';
     const leaderUsed = game[myUsedLeaderKey];
 
@@ -637,13 +637,10 @@ export default function App() {
        return game.flags.some(f => !f.owner && f[targetKey].length > 0);
     };
 
-    // Check each card in hand
     return hand.some(card => {
-      // 1. Tactics Logic
       if (card.type === 'tactics') {
         if (tacticsRestricted) return false;
 
-        // Specific Tactics Checks
         if (card.subType === 'environment') {
           return game.flags.some(f => !f.owner && !f.environment);
         }
@@ -658,7 +655,6 @@ export default function App() {
         }
         if (card.subType === 'morale') {
           if ((card.name === 'Alexander' || card.name === 'Darius') && leaderUsed) return false;
-          // Check for empty slots on board
           return game.flags.some(f => {
             if (f.owner) return false;
             const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
@@ -669,7 +665,6 @@ export default function App() {
         return false;
       }
       
-      // 2. Normal Card Logic
       return game.flags.some(f => {
         if (f.owner) return false;
         const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
@@ -884,7 +879,6 @@ export default function App() {
     setSelectedCardIdx(null);
   };
   
-  // --- Pass Turn Action ---
   const passTurn = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
@@ -895,7 +889,7 @@ export default function App() {
       turn: isHost ? 'guest' : 'host',
       hasPlayedCard: false,
       lastMove: serverTimestamp(),
-      lastPlacedCard: null, // Clear highlight
+      lastPlacedCard: null, 
       chat: arrayUnion({ sender: 'system', text: `${isHost ? 'Host' : 'Guest'} passed.`, timestamp: Date.now() })
     });
     setInteractionMode(null);
