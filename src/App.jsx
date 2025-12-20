@@ -53,14 +53,7 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Init ---
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
+const firebaseConfig = JSON.parse(__firebase_config);
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -68,7 +61,7 @@ const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
 
-const appId = 'battle-line-prod';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'battle-line-prod';
 
 // --- Game Constants ---
 const COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
@@ -338,7 +331,7 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
         })}
       </div>
 
-      <div className="relative z-10 my-1">
+      <div className="relative z-30 my-1">
         <button 
           disabled={
             data.owner || 
@@ -409,7 +402,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   );
 };
 
-// Help & Removed Cards Modals are unchanged...
 const HelpModal = ({ onClose }) => {
   const [tab, setTab] = useState('rules');
   const tactics = useMemo(() => createTacticsDeck().reduce((acc, current) => {
