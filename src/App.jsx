@@ -240,7 +240,6 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
     );
   }
 
-  // Highlight for the last played card
   const highlightClass = card.isLastPlayed ? 'ring-2 ring-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.6)] z-10' : '';
 
   if (card.type === 'tactics') {
@@ -276,8 +275,8 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot
-const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard }) => {
+// FlagSpot: Updated disabled logic to allow Environment cards on full flags
+const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard, isEnvironmentSelected }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
   let Icon = Shield;
@@ -293,9 +292,14 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
-  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
+  
+  // Logic Fix: Check if placement is allowed based on card type
+  const isCardLimitReached = isHost ? hostFull : guestFull;
+  // If Environment card is selected, we check if Environment slot is empty (ignoring card limits)
+  // If Normal/Troop card, we check if card slot is full
+  const placementRestriction = isEnvironmentSelected ? !!data.environment : isCardLimitReached;
 
   return (
     <div className="flex flex-col items-center gap-0.5 sm:gap-2 snap-center flex-shrink-0 px-0.5 relative">
@@ -336,9 +340,13 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
         })}
       </div>
 
-      <div className="relative z-30 my-1">
+      <div className="relative z-10 my-1">
         <button 
-          disabled={(!canPlay || data.owner || (isHost ? hostFull : guestFull)) && !(interactionMode === 'select_traitor_target' && !data.owner && (isHost ? !hostFull : !guestFull)) && !(interactionMode === 'redeploy_action' && !data.owner && (isHost ? !hostFull : !guestFull))}
+          disabled={
+            data.owner || 
+            (!interactionMode ? (!canPlay || placementRestriction) : 
+            !((interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !isCardLimitReached))
+          }
           onClick={() => {
             if ((interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && onFlagClick) onFlagClick(index);
             else onPlayToFlag(index);
@@ -346,9 +354,9 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
           className={`
             w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 sm:border-4 flex items-center justify-center shadow-inner transition-all flex-shrink-0 touch-manipulation
             ${statusColor}
-            ${canPlay && !data.owner && (isHost ? !hostFull : !guestFull) ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
+            ${canPlay && !data.owner && !placementRestriction && !interactionMode ? 'animate-pulse hover:scale-110 ring-2 ring-yellow-400 cursor-pointer' : ''}
             ${hasClaim ? 'ring-2 ring-purple-500 animate-bounce' : ''}
-            ${(interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !data.owner && (isHost ? !hostFull : !guestFull) ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
+            ${(interactionMode === 'select_traitor_target' || interactionMode === 'redeploy_action') && !data.owner && !isCardLimitReached ? 'ring-4 ring-green-500 animate-pulse bg-green-100 scale-110 cursor-pointer z-30' : ''}
           `}
         >
           {data.owner ? <Icon className={`w-4 h-4 sm:w-6 sm:h-6 ${data.owner === 'host' ? 'text-blue-600' : 'text-red-600'}`} /> : 
@@ -401,9 +409,6 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
     </div>
   );
 };
-// ... (Rest of the code remains exactly the same)
-// Added minimal ... around the rest to fit context.
-// Assuming the rest of the component (HelpModal, RemovedCardsModal, App) follows here without changes.
 
 const HelpModal = ({ onClose }) => {
   const [tab, setTab] = useState('rules');
@@ -681,7 +686,7 @@ export default function App() {
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const myCardsKey = isHost ? 'hostCards' : 'guestCards';
     const myGuileKey = isHost ? 'hostGuile' : 'guestGuile';
-    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader'; 
+    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader';
     
     const hand = [...game[myHandKey]];
     const cardToPlay = hand[selectedCardIdx];
@@ -810,25 +815,30 @@ export default function App() {
     try { await updateDoc(gameRef, updateData); } catch (e) { setError("通信エラーが発生しました。"); }
     setSelectedCardIdx(null);
   };
-
+  
   const handleSortHand = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
     const myHandKey = isHost ? 'hostHand' : 'guestHand';
     const hand = [...game[myHandKey]];
+    
     const nextSortState = (sortState + 1) % 2;
+
     hand.sort((a, b) => {
+      // Tactics last
       if (a.type === 'tactics' && b.type !== 'tactics') return 1;
       if (a.type !== 'tactics' && b.type === 'tactics') return -1;
       if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
-      if (nextSortState === 0) { 
+
+      if (nextSortState === 0) { // Value -> Color
         if (a.value !== b.value) return a.value - b.value;
         return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
-      } else { 
+      } else { // Color -> Value
         if (a.color !== b.color) return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
         return a.value - b.value;
       }
     });
+
     const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
     await updateDoc(gameRef, { [myHandKey]: hand });
     setSortState(nextSortState);
@@ -1063,7 +1073,7 @@ export default function App() {
       flags: newFlags,
       [myHandKey]: hand,
       [myGuileKey]: arrayUnion(playedCard),
-      removedCards: arrayUnion(removedCard),
+      removedCards: arrayUnion(removedCard), // Add to removed
       hasPlayedCard: true,
       winner: checkWinner(newFlags) || null,
       chat: arrayUnion({ sender: 'system', text: `Redeployed (Discarded) ${removedCard.name || removedCard.color}`, timestamp: Date.now() }),
@@ -1074,8 +1084,6 @@ export default function App() {
     setSelectedCardIdx(null);
   };
 
-  // ... (Rest of the functions: drawAndEndTurn, claimFlag, etc. are unchanged)
-  // Re-including drawAndEndTurn for context, though it's unchanged.
   const drawAndEndTurn = async (deckType) => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
@@ -1212,6 +1220,8 @@ export default function App() {
   const isMyTurn = !isSpectator && (game.turn === (isHost ? 'host' : 'guest'));
   const selectedDetails = selectedCardIdx !== null && myHand[selectedCardIdx] && myHand[selectedCardIdx].type === 'tactics' ? myHand[selectedCardIdx] : null;
   const lastPlacedCard = game.lastPlacedCard;
+  
+  const isEnvironmentSelected = selectedDetails?.subType === 'environment';
 
   let interactionMsg = null;
   if (interactionMode === 'scout_draw') interactionMsg = `Draw ${3 - scoutDrawCount} more cards`;
@@ -1371,6 +1381,7 @@ export default function App() {
                 canPlay={isMyTurn && selectedCardIdx !== null && !interactionMode}
                 isSpectator={isSpectator} isMyTurn={isMyTurn} interactionMode={interactionMode}
                 lastPlacedCard={lastPlacedCard}
+                isEnvironmentSelected={isEnvironmentSelected}
               />
             ))}
           </div>
