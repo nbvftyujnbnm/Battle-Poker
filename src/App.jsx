@@ -48,7 +48,8 @@ import {
   Move,
   HelpCircle,
   ArrowDownWideNarrow,
-  History
+  History,
+  SkipForward // 追加: パス用アイコン
 } from 'lucide-react';
 
 // --- Firebase Init ---
@@ -275,7 +276,6 @@ const Card = ({ card, hidden, onClick, selected, disabled, className = "" }) => 
   );
 };
 
-// FlagSpot: Updated disabled logic to allow Environment cards on full flags
 const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDeny, onCancelClaim, onEnvironmentClick, onCardClick, onFlagClick, onZoom, canPlay, isSpectator, isMyTurn, interactionMode, lastPlacedCard, isEnvironmentSelected }) => {
   const isOwner = data.owner === (isHost ? 'host' : 'guest');
   let statusColor = "bg-gray-200 border-gray-300";
@@ -292,13 +292,11 @@ const FlagSpot = ({ index, data, isHost, onPlayToFlag, onClaim, onConcede, onDen
   const maxSlots = isMud ? 4 : 3;
   const hostFull = data.hostCards.length >= maxSlots;
   const guestFull = data.guestCards.length >= maxSlots;
+  const isOpponent = (isHost, cardSide) => (isHost && cardSide === 'guest') || (!isHost && cardSide === 'host');
 
   const isLastEnv = lastPlacedCard?.type === 'environment' && lastPlacedCard?.flagIndex === index;
   
-  // Logic Fix: Check if placement is allowed based on card type
   const isCardLimitReached = isHost ? hostFull : guestFull;
-  // If Environment card is selected, we check if Environment slot is empty (ignoring card limits)
-  // If Normal/Troop card, we check if card slot is full
   const placementRestriction = isEnvironmentSelected ? !!data.environment : isCardLimitReached;
 
   return (
@@ -443,6 +441,8 @@ const HelpModal = ({ onClose }) => {
               <p>戦術カードは、自分がプレイした枚数が相手より1枚多い状態（先行している状態）では、新たに使用できません。</p>
               <h3 className="font-bold text-lg mt-4">リーダーカード制限</h3>
               <p>リーダーカード（Alexander, Darius）は、各プレイヤーにつきゲーム中1回のみ使用可能です。一度使用すると、盤面から除去されても2枚目は使用できません。</p>
+              <h3 className="font-bold text-lg mt-4">パス (Pass)</h3>
+              <p>手札の全てのカードがプレイ不可能な状態（盤面が埋まっている、戦術カード制限など）に限り、何もせずにターンを終了（パス）できます。</p>
             </>
           ) : (
             <div className="space-y-3">
@@ -612,6 +612,74 @@ export default function App() {
       chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [game?.chat, isChatOpen]);
+
+  // --- Helpers for Pass Logic ---
+  const checkHandPlayability = () => {
+    if (!game || !user) return true; // Default safe
+    const isHost = user.uid === game.host;
+    const myHandKey = isHost ? 'hostHand' : 'guestHand';
+    const hand = game[myHandKey] || [];
+    
+    // 戦術カード制限チェック
+    const { hostCount, guestCount } = calculateTacticsCount(game);
+    const myCount = isHost ? hostCount : guestCount;
+    const oppCount = isHost ? guestCount : hostCount;
+    const tacticsRestricted = myCount > oppCount;
+    
+    // リーダー使用済みチェック
+    const myUsedLeaderKey = isHost ? 'hostUsedLeader' : 'guestUsedLeader';
+    const leaderUsed = game[myUsedLeaderKey];
+
+    const hasValidTarget = (targetIsMine) => {
+       const targetKey = targetIsMine 
+         ? (isHost ? 'hostCards' : 'guestCards')
+         : (isHost ? 'guestCards' : 'hostCards');
+       return game.flags.some(f => !f.owner && f[targetKey].length > 0);
+    };
+
+    // Check each card in hand
+    return hand.some(card => {
+      // 1. Tactics Logic
+      if (card.type === 'tactics') {
+        if (tacticsRestricted) return false;
+
+        // Specific Tactics Checks
+        if (card.subType === 'environment') {
+          return game.flags.some(f => !f.owner && !f.environment);
+        }
+        if (card.subType === 'guile') {
+          if (card.name === 'Scout') {
+             const deckCount = (game.deck.length + (game.tacticsDeck ? game.tacticsDeck.length : 0));
+             return deckCount > 0;
+          }
+          if (card.name === 'Deserter' || card.name === 'Traitor') return hasValidTarget(false);
+          if (card.name === 'Redeploy') return hasValidTarget(true);
+          return false;
+        }
+        if (card.subType === 'morale') {
+          if ((card.name === 'Alexander' || card.name === 'Darius') && leaderUsed) return false;
+          // Check for empty slots on board
+          return game.flags.some(f => {
+            if (f.owner) return false;
+            const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
+            const currentSlots = isHost ? f.hostCards.length : f.guestCards.length;
+            return currentSlots < maxSlots;
+          });
+        }
+        return false;
+      }
+      
+      // 2. Normal Card Logic
+      return game.flags.some(f => {
+        if (f.owner) return false;
+        const maxSlots = f.environment?.name === 'Mud' ? 4 : 3;
+        const currentSlots = isHost ? f.hostCards.length : f.guestCards.length;
+        return currentSlots < maxSlots;
+      });
+    });
+  };
+
+  const isPlayable = useMemo(() => checkHandPlayability(), [game, user]);
 
   // --- Actions ---
 
@@ -816,6 +884,23 @@ export default function App() {
     setSelectedCardIdx(null);
   };
   
+  // --- Pass Turn Action ---
+  const passTurn = async () => {
+    if (!game || !user) return;
+    const isHost = user.uid === game.host;
+    if (game.turn !== (isHost ? 'host' : 'guest')) return;
+    
+    const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+    await updateDoc(gameRef, {
+      turn: isHost ? 'guest' : 'host',
+      hasPlayedCard: false,
+      lastMove: serverTimestamp(),
+      lastPlacedCard: null, // Clear highlight
+      chat: arrayUnion({ sender: 'system', text: `${isHost ? 'Host' : 'Guest'} passed.`, timestamp: Date.now() })
+    });
+    setInteractionMode(null);
+  };
+  
   const handleSortHand = async () => {
     if (!game || !user) return;
     const isHost = user.uid === game.host;
@@ -825,15 +910,14 @@ export default function App() {
     const nextSortState = (sortState + 1) % 2;
 
     hand.sort((a, b) => {
-      // Tactics last
       if (a.type === 'tactics' && b.type !== 'tactics') return 1;
       if (a.type !== 'tactics' && b.type === 'tactics') return -1;
       if (a.type === 'tactics' && b.type === 'tactics') return a.name.localeCompare(b.name);
 
-      if (nextSortState === 0) { // Value -> Color
+      if (nextSortState === 0) {
         if (a.value !== b.value) return a.value - b.value;
         return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
-      } else { // Color -> Value
+      } else {
         if (a.color !== b.color) return COLORS.indexOf(a.color) - COLORS.indexOf(b.color);
         return a.value - b.value;
       }
@@ -1405,6 +1489,18 @@ export default function App() {
                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-full shadow-xl flex items-center gap-2 animate-bounce"
                    >
                      <Trash2 size={18} /> 破棄して終了
+                   </button>
+                </div>
+             )}
+             
+             {/* Pass Button: Shows if no playable cards */}
+             {isMyTurn && !game.hasPlayedCard && !isPlayable && !interactionMode && (
+                <div className="absolute -top-16 right-4 z-20 pointer-events-auto">
+                   <button 
+                     onClick={passTurn}
+                     className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-xl flex items-center gap-2 animate-bounce"
+                   >
+                     Pass Turn <SkipForward size={18} />
                    </button>
                 </div>
              )}
